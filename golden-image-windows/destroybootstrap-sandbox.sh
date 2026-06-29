@@ -6,15 +6,27 @@
 #   1. terraform destroy       → removes all Terraform-managed AWS resources
 #                                 (Image Builder, IAM, Lambda, EventBridge,
 #                                 SNS, S3 logging bucket, SSM param, OIDC
-#                                 provider, etc.)
+#                                 provider, etc.) State lives in S3 — the
+#                                 backend is auto-detected from the existing
+#                                 .terraform/ directory; no re-init required.
 #   2. delete KMS key + alias  → created directly via `aws kms create-key`
 #                                 in bootstrap's Step 4, so it is NOT in
 #                                 Terraform state and must be cleaned up
 #                                 separately.
-#   3. remove GitHub secrets   → the six secrets bootstrap pushed via
-#                                 `gh secret set` in its Step 7.
-#   4. remove local files      → terraform.tfvars, tfstate, tfplan,
-#                                 .terraform/ directory.
+#   3. remove GitHub secrets   → the secrets bootstrap pushed via
+#                                 `gh secret set` in its Step 7 (now nine:
+#                                 the original six plus TF_STATE_*).
+#   4. remove local files      → terraform.tfvars, backend.hcl, tfplan,
+#                                 .terraform/ directory. (State itself is in
+#                                 S3 and is intentionally left in place so
+#                                 the bucket can be inspected / restored if
+#                                 destroy is aborted. To nuke the bucket
+#                                 too, see "Manual step" below.)
+#
+# IMPORTANT: after this script finishes, prefer the GitHub Actions
+# destroy workflow (.github/workflows/golden-image-terraform-destroy.yml)
+# for any further destruction — running `terraform destroy` from your
+# laptop and from CI in parallel will fight over the same S3 lockfile.
 #
 # Run this from inside the golden-image-windows/ directory (same as bootstrap).
 #
@@ -67,7 +79,14 @@ echo "    + components, IAM roles, Lambda, EventBridge, SNS, S3 logging"
 echo "    bucket, SSM parameter, GitHub OIDC provider)"
 echo "  - KMS key + alias '${NAME_PREFIX}-sandbox' (scheduled for deletion)"
 echo "  - GitHub repo secrets pushed by bootstrap (with confirmation)"
-echo "  - Local files: terraform.tfvars, tfstate, tfplan, .terraform/"
+echo "  - Local files: terraform.tfvars, backend.hcl, tfplan, .terraform/"
+echo ""
+echo "The remote-state S3 bucket itself is INTENTIONALLY LEFT IN PLACE."
+echo "To delete it after this script finishes:"
+echo "  aws s3 rm s3://<tf_state_bucket>/<tf_state_key> --recursive"
+echo "  aws s3 rb s3://<tf_state_bucket>"
+echo "(replacing <tf_state_bucket> and <tf_state_key> with the values pushed"
+echo " to GitHub secrets TF_STATE_BUCKET / TF_STATE_KEY)"
 echo ""
 read -rp "Type the word 'destroy' (all lowercase) to continue: " CONFIRM_ACCOUNT
 if [[ "$CONFIRM_ACCOUNT" != "destroy" ]]; then
@@ -180,6 +199,9 @@ SECRETS_TO_REMOVE=(
   "GOLDEN_IMAGE_KMS_KEY_ARN"
   "GOLDEN_IMAGE_DISTRIBUTION_ACCOUNTS"
   "GOLDEN_IMAGE_SNS_TOPIC_ARN"
+  "TF_STATE_BUCKET"
+  "TF_STATE_REGION"
+  "TF_STATE_KEY"
 )
 
 remove_github_secrets() {
@@ -228,8 +250,7 @@ echo "--- Step 4: Local file cleanup ---"
 
 LOCAL_FILES_TO_REMOVE=(
   "terraform.tfvars"
-  "terraform.tfstate"
-  "terraform.tfstate.backup"
+  "backend.hcl"
   "tfplan.binary"
 )
 
@@ -256,6 +277,11 @@ echo "  - .terraform.lock.hcl         (dependency lock; commit + reuse)"
 echo "  - lambda/update_ssm_param.zip (deployment artifact)"
 echo "  - lambda/index.py             (Lambda source)"
 echo "  - *.tf                        (Terraform config — owned by git)"
+echo ""
+echo "State files (terraform.tfstate / terraform.tfstate.backup) are NOT"
+echo "removed here because state lives in S3 — there is no local copy to"
+echo "delete. The S3 bucket and its state object are also left in place;"
+echo "see the intro for the manual cleanup commands."
 echo ""
 
 # ---------------------------------------------------------------------------

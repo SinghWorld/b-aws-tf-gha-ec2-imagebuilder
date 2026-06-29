@@ -203,6 +203,33 @@ data "aws_iam_policy_document" "github_actions_permissions" {
     ]
   }
 
+  # --- S3: Terraform remote state bucket (with native .tflock lock file) ---
+  # Required for `terraform init/plan/apply/destroy` to read state, write
+  # state, and acquire/release the native lock file at <key>.tflock.
+  # The bucket itself is created out-of-band by bootstrap-sandbox.sh and
+  # is therefore NOT one of the resources managed by this module — it is
+  # referenced here via the tf_state_bucket variable so the IAM policy is
+  # scoped to exactly the bucket CI uses. If the variable is empty (i.e.
+  # this module was applied without ever wiring up remote state), the
+  # statement degrades to no permissions, which is correct.
+  statement {
+    sid    = "TerraformStateBucket"
+    effect = "Allow"
+    actions = [
+      "s3:ListBucket",
+      "s3:GetBucketVersioning",
+      "s3:GetBucketLocation",
+      "s3:GetObject",
+      "s3:GetObjectVersion",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = var.tf_state_bucket != null && var.tf_state_bucket != "" ? [
+      "arn:aws:s3:::${var.tf_state_bucket}",
+      "arn:aws:s3:::${var.tf_state_bucket}/*",
+    ] : []
+  }
+
   # --- KMS: only the key used for AMI encryption, only the actions needed ---
   statement {
     sid    = "AMIEncryptionKey"
