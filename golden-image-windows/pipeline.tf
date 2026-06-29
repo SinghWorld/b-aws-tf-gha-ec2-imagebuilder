@@ -16,7 +16,7 @@ resource "aws_imagebuilder_image_pipeline" "this" {
 
   image_tests_configuration {
     image_tests_enabled = true
-    timeout_minutes      = 90
+    timeout_minutes     = 90
   }
 
   schedule {

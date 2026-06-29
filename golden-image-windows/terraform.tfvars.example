@@ -3,6 +3,15 @@
 aws_region   = "us-east-1"
 name_prefix  = "golden-win2022"
 
+# --- Terraform remote-state backend ---
+# These three values match what bootstrap-sandbox.sh writes into
+# backend.hcl. If you are running terraform manually instead of via the
+# bootstrap script, fill them in here AND in backend.hcl so the partial
+# backend block in provider.tf resolves.
+tf_state_bucket = "golden-win2022-tfstate-111111111111-us-east-1"
+tf_state_region = "us-east-1"
+tf_state_key    = "golden-image-windows/terraform.tfstate"
+
 # Use the SSM alias ARN, not a static AMI ID — always pulls latest AWS patch baseline
 base_image_arn = "arn:aws:imagebuilder:us-east-1:aws:image/windows-server-2022-english-full-base-x86/x.x.x"
 
@@ -37,7 +46,18 @@ tags = {
 # --- GitHub OIDC ---
 github_org           = "mrbalraj007"
 github_repo          = "golden-image-windows"   # adjust to your actual repo name
+
+# Push events (triggers `terraform apply`). Keep this TIGHT — typically
+# just `main`.
 allowed_branches     = ["main"]
+
+# pull_request events (triggers `terraform plan`). Defaults to ["*"]
+# via the variable's own default, so feature-branch PRs work out of
+# the box. Wildcards are matched with StringLike, so e.g.
+# ["release/*", "hotfix/*"] also works. Set explicitly here to lock
+# down which branches can run plan.
+# allowed_pr_branches  = ["*"]
+
 allow_pull_requests  = true
 role_name            = "golden-image-github-actions-role"
 

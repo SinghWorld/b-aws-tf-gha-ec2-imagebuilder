@@ -16,7 +16,7 @@ resource "aws_imagebuilder_component" "windows_updates" {
   name        = "${var.name_prefix}-windows-updates"
   description = "Installs latest Windows Updates at build time"
   platform    = "Windows"
-  version     = "1.0.0"
+  version     = "1.0.2"
   data        = file("${path.module}/components/windows-updates.yaml")
   tags        = var.tags
 }
@@ -25,7 +25,7 @@ resource "aws_imagebuilder_component" "cis_hardening" {
   name        = "${var.name_prefix}-cis-hardening"
   description = "Applies CIS Benchmark hardening baseline for Windows Server"
   platform    = "Windows"
-  version     = "1.0.0"
+  version     = "1.0.2"
   data        = file("${path.module}/components/cis-hardening.yaml")
   tags        = var.tags
 }
@@ -34,7 +34,7 @@ resource "aws_imagebuilder_component" "agent_install" {
   name        = "${var.name_prefix}-agent-install"
   description = "Installs/validates SSM Agent and CloudWatch Agent"
   platform    = "Windows"
-  version     = "1.0.0"
+  version     = "1.0.2"
   data        = file("${path.module}/components/agent-install.yaml")
   tags        = var.tags
 }
@@ -43,15 +43,25 @@ resource "aws_imagebuilder_component" "validation_test" {
   name        = "${var.name_prefix}-validation-test"
   description = "Pester-based post-build validation (hardening, agents, services)"
   platform    = "Windows"
-  version     = "1.0.0"
+  version     = "1.0.2"
   data        = file("${path.module}/components/validation-test.yaml")
   tags        = var.tags
 }
 
 resource "aws_imagebuilder_image_recipe" "this" {
   name         = "${var.name_prefix}-recipe"
-  version      = "1.0.0"
+  version      = "1.0.1"
   parent_image = var.base_image_arn
+
+  # Image Builder recipes are immutable (versioned). When we bump the version,
+  # Terraform wants to destroy the old recipe, but the pipeline still references
+  # it until the in-place pipeline update runs — AWS returns
+  # ResourceDependencyException. create_before_destroy creates the new recipe
+  # FIRST, lets the pipeline update swap to it, and only then destroys the
+  # old one. Standard pattern for immutable/versioned resources.
+  lifecycle {
+    create_before_destroy = true
+  }
 
   block_device_mapping {
     device_name = "/dev/sda1"
@@ -76,6 +86,12 @@ resource "aws_imagebuilder_image_recipe" "this" {
     component_arn = aws_imagebuilder_component.agent_install.arn
   }
 
+  # validation_test is a TEST component — distinguished from build components
+  # by the `test` phase in its YAML. Image Builder (provider 5.x) puts all
+  # components in `component {}` blocks and routes them to the right pipeline
+  # phase by inspecting which phases they define. The pipeline's
+  # `image_tests_configuration` block (see pipeline.tf) gates whether the
+  # test phase actually runs on a separate test instance.
   component {
     component_arn = aws_imagebuilder_component.validation_test.arn
   }

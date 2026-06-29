@@ -1,0 +1,8 @@
+/home/dc-ops/b-aws-tf-gha-ec2-imagebuilder/.github/workflows/golden-image-build.yml
+/home/dc-ops/b-aws-tf-gha-ec2-imagebuilder/.github/workflows/golden-image-terraform.yml
+/home/dc-ops/b-aws-tf-gha-ec2-imagebuilder/README.md
+/home/dc-ops/b-aws-tf-gha-ec2-imagebuilder/golden-image-windows/components/agent-install.yaml
+/home/dc-ops/b-aws-tf-gha-ec2-imagebuilder/golden-image-windows/components/cis-hardening.yaml
+/home/dc-ops/b-aws-tf-gha-ec2-imagebuilder/golden-image-windows/components/validation-test.yaml
+/home/dc-ops/b-aws-tf-gha-ec2-imagebuilder/golden-image-windows/components/windows-updates.yaml
+/home/dc-ops/b-aws-tf-gha-ec2-imagebuilder/test.md

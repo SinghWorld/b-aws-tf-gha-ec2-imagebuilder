@@ -126,3 +126,322 @@ starting point. For full compliance coverage, swap that block for one of:
   `var.name_prefix` directly, so renaming `name_prefix` in `terraform.tfvars`
   automatically keeps the OIDC role's permissions scoped correctly — no
   separate edits needed.
+
+
+
+---
+
+# AWS EC2 Image Builder - Windows Server 2022 Golden AMI Pipeline
+
+## Overview
+
+This Terraform module provisions a **production-ready EC2 Image Builder pipeline** for automatically building, testing, hardening, validating, encrypting, and distributing **Windows Server 2022 Golden AMIs**.
+
+The solution includes:
+
+- Automated Windows patching
+- CIS hardening
+- SSM & CloudWatch Agent installation
+- Validation using Pester
+- Cross-account AMI distribution
+- Event-driven automation
+- GitHub Actions OIDC integration
+- Automated SSM Parameter updates
+- SNS notifications
+
+---
+
+# AWS Resources Created
+
+## Core Image Builder Resources
+
+| Resource | Purpose |
+|----------|---------|
+| `aws_imagebuilder_image_pipeline` | Orchestrates the entire build pipeline |
+| `aws_imagebuilder_image_recipe` | Defines base AMI, components and block device mappings |
+| `aws_imagebuilder_infrastructure_configuration` | Build instance configuration including subnet, IAM role, security groups and logging |
+| `aws_imagebuilder_distribution_configuration` | Defines target accounts, regions, launch permissions and encryption |
+| `aws_imagebuilder_component` (×4) | Windows Updates, CIS Hardening, Agent Install and Validation |
+
+---
+
+# Custom Image Builder Components
+
+| Component | Purpose |
+|-----------|---------|
+| `components/windows-updates.yaml` | Install latest Windows Updates |
+| `components/cis-hardening.yaml` | Apply CIS Benchmark hardening |
+| `components/agent-install.yaml` | Install and validate SSM & CloudWatch Agent |
+| `components/validation-test.yaml` | Execute Pester validation tests |
+
+---
+
+# IAM Resources
+
+| Resource | Purpose |
+|----------|---------|
+| `aws_iam_role.imagebuilder_instance_role` | EC2 Image Builder Instance Role |
+| `aws_iam_role_policy_attachment.ssm_managed_instance_core` | AmazonSSMManagedInstanceCore |
+| `aws_iam_role_policy_attachment.imagebuilder_instance_policy` | EC2InstanceProfileForImageBuilder |
+| `aws_iam_role_policy_attachment.imagebuilder_ecr_logs` | ECR Container Build permissions |
+| `aws_iam_instance_profile.imagebuilder_profile` | Instance Profile used during build |
+
+---
+
+# Event-Driven Automation
+
+| Resource | Purpose |
+|----------|---------|
+| `aws_cloudwatch_event_rule.image_state_change` | Detect Image Builder state changes |
+| `aws_cloudwatch_event_target.invoke_update_lambda` | Invoke Lambda |
+| `aws_lambda_permission.allow_eventbridge` | Allow EventBridge to invoke Lambda |
+| `aws_iam_role.lambda_update_role` | Lambda execution role |
+| `aws_iam_role_policy.lambda_update_policy` | Permissions for SSM, SNS, Logs, Image Builder |
+| `aws_lambda_function.update_golden_ami_parameter` | Update SSM Parameter Store with latest AMI |
+
+---
+
+# Storage & Logging
+
+| Resource | Purpose |
+|----------|---------|
+| `aws_s3_bucket.imagebuilder_logs` | Store Image Builder logs |
+| `aws_s3_bucket_lifecycle_configuration.imagebuilder_logs` | Delete logs after 180 days |
+| `aws_s3_bucket_public_access_block.imagebuilder_logs` | Disable public access |
+
+---
+
+# Parameter Store
+
+| Resource | Purpose |
+|----------|---------|
+| `aws_ssm_parameter.golden_ami_latest` | Stores latest validated Golden AMI ID |
+
+Parameter Name:
+
+```text
+/golden-images/golden-win2022/latest-ami-id
+```
+
+---
+
+# GitHub Actions OIDC Integration
+
+| Resource | Purpose |
+|----------|---------|
+| `aws_iam_openid_connect_provider.github` | GitHub OIDC Provider |
+| `aws_iam_role.github_actions` | IAM Role assumed by GitHub Actions |
+| `aws_iam_role_policy.github_actions_permissions` | Least privilege permissions |
+
+---
+
+# Input Variables
+
+| Variable | Required | Default |
+|----------|----------|---------|
+| `name_prefix` | No | `golden-win2022` |
+| `aws_region` | No | `us-east-1` |
+| `base_image_arn` | No | AWS Windows 2022 Base Image |
+| `instance_types` | No | `["t3.large","t3a.large"]` |
+| `subnet_id` | Yes | - |
+| `security_group_ids` | Yes | - |
+| `instance_profile_name` | No | `golden-win2022-imagebuilder-profile` |
+| `kms_key_id` | Yes | - |
+| `distribution_accounts` | No | `[]` |
+| `distribution_regions` | No | `{}` |
+| `schedule_cron` | No | Second Saturday Monthly |
+| `sns_topic_arn` | No | `""` |
+| `github_org` | Yes | - |
+| `github_repo` | Yes | - |
+
+---
+
+# Outputs
+
+| Output | Description |
+|---------|-------------|
+| `pipeline_arn` | Image Builder Pipeline ARN |
+| `recipe_arn` | Image Recipe ARN |
+| `golden_ami_ssm_parameter_name` | SSM Parameter Name |
+| `logging_bucket` | S3 Logging Bucket |
+| `infrastructure_configuration_arn` | Infrastructure Configuration ARN |
+| `distribution_configuration_arn` | Distribution Configuration ARN |
+| `github_actions_role_arn` | IAM Role ARN for GitHub Actions |
+| `github_oidc_provider_arn` | GitHub OIDC Provider ARN |
+
+---
+
+# GitHub Actions Workflows
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `golden-image-build.yml` | Push, Schedule, Manual | Trigger Image Builder Pipeline |
+| `golden-image-terraform.yml` | Terraform Changes | Terraform Plan & Apply |
+
+---
+
+# Architecture
+
+```mermaid
+flowchart TD
+
+    GH[GitHub Actions<br>OIDC Authentication]
+
+    TF[Terraform Apply]
+
+    PIPE[EC2 Image Builder Pipeline]
+
+    RECIPE[Image Recipe]
+
+    INFRA[Infrastructure Configuration]
+
+    DIST[Distribution Configuration]
+
+    BUILD[Windows Build Instance]
+
+    UPDATE[Windows Updates]
+
+    CIS[CIS Hardening]
+
+    AGENT[Install SSM & CloudWatch Agent]
+
+    TEST[Pester Validation]
+
+    AMI[Golden AMI]
+
+    COPY[Cross Account / Region Distribution]
+
+    EVENT[EventBridge]
+
+    LAMBDA[Lambda]
+
+    SSM[SSM Parameter Store]
+
+    SNS[SNS Notification]
+
+    CONSUMER[Terraform / ASG / Launch Templates]
+
+    GH --> TF
+
+    TF --> PIPE
+
+    PIPE --> RECIPE
+    PIPE --> INFRA
+    PIPE --> DIST
+
+    RECIPE --> BUILD
+    INFRA --> BUILD
+
+    BUILD --> UPDATE
+    UPDATE --> CIS
+    CIS --> AGENT
+    AGENT --> TEST
+
+    TEST --> AMI
+
+    AMI --> COPY
+
+    AMI --> EVENT
+
+    EVENT --> LAMBDA
+
+    LAMBDA --> SSM
+
+    LAMBDA --> SNS
+
+    SSM --> CONSUMER
+```
+
+---
+
+# Build Workflow
+
+```text
+GitHub Actions
+        │
+        ▼
+Terraform Apply
+        │
+        ▼
+Create Image Builder Resources
+        │
+        ▼
+Launch Build Instance
+        │
+        ▼
+Install Windows Updates
+        │
+        ▼
+Apply CIS Hardening
+        │
+        ▼
+Install SSM & CloudWatch Agent
+        │
+        ▼
+Execute Validation Tests
+        │
+        ▼
+Create Golden AMI
+        │
+        ▼
+Copy AMI to Target Accounts & Regions
+        │
+        ▼
+EventBridge Notification
+        │
+        ▼
+Lambda Function
+        │
+        ├── Update SSM Parameter
+        └── Publish SNS Notification
+```
+
+---
+
+# Prerequisites
+
+The following resources **must already exist** before deploying this module:
+
+- VPC Subnet with SSM VPC Endpoints or NAT Gateway
+- Security Groups
+- KMS Key
+- SNS Topic (optional but recommended)
+- Target AWS Account IDs
+- GitHub Repository
+- GitHub OIDC (or existing provider)
+
+---
+
+# Key Features
+
+- Enterprise-ready Golden AMI Pipeline
+- Automated Windows Updates
+- CIS Benchmark Hardening
+- Automated Validation (Pester)
+- Cross-Account Distribution
+- Multi-Region Distribution
+- KMS Encryption
+- GitHub Actions OIDC Authentication
+- Event-Driven Automation
+- Automated SSM Parameter Updates
+- SNS Notifications
+- Infrastructure as Code using Terraform
+- Production Ready
+
+---
+
+# Technology Stack
+
+- Terraform
+- AWS EC2 Image Builder
+- AWS Lambda
+- Amazon EventBridge
+- Amazon SNS
+- AWS Systems Manager Parameter Store
+- Amazon S3
+- IAM
+- GitHub Actions
+- OIDC Authentication
+- Windows Server 2022
+- PowerShell
+- Pester Testing

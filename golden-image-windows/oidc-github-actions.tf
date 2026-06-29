@@ -22,29 +22,68 @@ resource "aws_iam_openid_connect_provider" "github" {
 locals {
   oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : var.existing_oidc_provider_arn
 
-  # Subject claims this role will trust. GitHub's sub claim format:
-  #   repo:<org>/<repo>:ref:refs/heads/<branch>   (push/branch events)
-  #   repo:<org>/<repo>:pull_request               (any PR against the repo)
-  branch_subs = [
+  # -----------------------------------------------------------------------
+  # OIDC sub-claim patterns
+  # -----------------------------------------------------------------------
+  # GitHub's `sub` claim has THREE distinct shapes we need to distinguish,
+  # because the same role needs to handle `push` (apply), same-repo
+  # `pull_request` (plan from feature branches), and fork `pull_request`
+  # (plan from forks). The shapes are:
+  #
+  #   push (branch ref):
+  #     repo:<org>/<repo>:ref:refs/heads/<branch>
+  #     e.g. repo:SinghWorld/b-aws-tf-gha-ec2-imagebuilder:ref:refs/heads/main
+  #
+  #   pull_request from same-repo branch (branch ref):
+  #     repo:<org>/<repo>:ref:refs/heads/<branch>
+  #     e.g. repo:SinghWorld/b-aws-tf-gha-ec2-imagebuilder:ref:refs/heads/apply-gha-with-remotes3-backend
+  #
+  #   pull_request from fork (literal suffix):
+  #     repo:<org>/<repo>:pull_request
+  #     e.g. repo:SinghWorld/b-aws-tf-gha-ec2-imagebuilder:pull_request
+  #
+  # Note that `push` and same-repo `pull_request` share the SAME sub shape
+  # (the branch ref). To tell them apart we have to add a second condition
+  # on the `event_name` claim — see the trust policy below.
+  # -----------------------------------------------------------------------
+  push_branch_subs = [
     for b in var.allowed_branches : "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/${b}"
   ]
 
-  pr_subs = var.allow_pull_requests ? ["repo:${var.github_org}/${var.github_repo}:pull_request"] : []
+  pr_branch_subs = [
+    for b in var.allowed_pr_branches : "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/${b}"
+  ]
 
-  trusted_subs = concat(local.branch_subs, local.pr_subs)
+  pr_fork_subs = var.allow_pull_requests ? [
+    "repo:${var.github_org}/${var.github_repo}:pull_request"
+  ] : []
 }
 
 ## ---------------------------------------------------------------------------
 ## TRUST POLICY — who can assume this role
 ## ---------------------------------------------------------------------------
-## Scoped to: this specific repo, only the listed branches (+ optionally
-## pull_request events), and only via the GitHub Actions OIDC audience.
-## This is the part that actually matters for security — get this loose and
-## the IAM policy attached doesn't matter much.
+## Three statements, each gated on event_name so push and pull_request
+## are scoped independently. The audience check (`sts.amazonaws.com`)
+## is in every statement.
+##
+## Statement 1 — `push` events from allowed_branches (typically just main).
+##                This is what triggers `terraform apply`.
+##
+## Statement 2 — `pull_request` events from same-repo branches matching
+##                allowed_pr_branches. This is what triggers `terraform
+##                plan` on PRs from feature branches. Defaults to ["*"]
+##                so feature branches work out of the box.
+##
+## Statement 3 — `pull_request` events from forks. GitHub issues a
+##                different sub claim for fork PRs (literal `:pull_request`
+##                suffix instead of `:ref:refs/heads/<branch>`).
 
 data "aws_iam_policy_document" "github_actions_trust" {
+  # --- Statement 1: push events → only allowed_branches ---
   statement {
-    effect  = "Allow"
+    sid    = "AllowPushToAllowedBranches"
+    effect = "Allow"
+
     actions = ["sts:AssumeRoleWithWebIdentity"]
 
     principals {
@@ -59,18 +98,86 @@ data "aws_iam_policy_document" "github_actions_trust" {
     }
 
     condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:event_name"
+      values   = ["push"]
+    }
+
+    condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = local.trusted_subs
+      values   = local.push_branch_subs
+    }
+  }
+
+  # --- Statement 2: pull_request events → allowed_pr_branches (default any) ---
+  statement {
+    sid    = "AllowPullRequestFromSameRepoBranches"
+    effect = "Allow"
+
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [local.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:event_name"
+      values   = ["pull_request"]
+    }
+
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = local.pr_branch_subs
+    }
+  }
+
+  # --- Statement 3: pull_request events from forks (literal :pull_request) ---
+  statement {
+    sid    = "AllowPullRequestFromFork"
+    effect = "Allow"
+
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [local.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:event_name"
+      values   = ["pull_request"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = local.pr_fork_subs
     }
   }
 }
 
 resource "aws_iam_role" "github_actions" {
-  name                  = var.role_name
-  assume_role_policy    = data.aws_iam_policy_document.github_actions_trust.json
-  max_session_duration  = 3600 # role is re-assumed per job step, not held for a whole long-running build
-  tags                  = var.tags
+  name                 = var.role_name
+  assume_role_policy   = data.aws_iam_policy_document.github_actions_trust.json
+  max_session_duration = 3600 # role is re-assumed per job step, not held for a whole long-running build
+  tags                 = var.tags
 }
 
 ## ---------------------------------------------------------------------------
@@ -201,6 +308,33 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       aws_s3_bucket.imagebuilder_logs.arn,
       "${aws_s3_bucket.imagebuilder_logs.arn}/*",
     ]
+  }
+
+  # --- S3: Terraform remote state bucket (with native .tflock lock file) ---
+  # Required for `terraform init/plan/apply/destroy` to read state, write
+  # state, and acquire/release the native lock file at <key>.tflock.
+  # The bucket itself is created out-of-band by bootstrap-sandbox.sh and
+  # is therefore NOT one of the resources managed by this module — it is
+  # referenced here via the tf_state_bucket variable so the IAM policy is
+  # scoped to exactly the bucket CI uses. If the variable is empty (i.e.
+  # this module was applied without ever wiring up remote state), the
+  # statement degrades to no permissions, which is correct.
+  statement {
+    sid    = "TerraformStateBucket"
+    effect = "Allow"
+    actions = [
+      "s3:ListBucket",
+      "s3:GetBucketVersioning",
+      "s3:GetBucketLocation",
+      "s3:GetObject",
+      "s3:GetObjectVersion",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = var.tf_state_bucket != null && var.tf_state_bucket != "" ? [
+      "arn:aws:s3:::${var.tf_state_bucket}",
+      "arn:aws:s3:::${var.tf_state_bucket}/*",
+    ] : []
   }
 
   # --- KMS: only the key used for AMI encryption, only the actions needed ---

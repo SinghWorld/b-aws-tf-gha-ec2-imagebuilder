@@ -10,13 +10,39 @@ variable "github_repo" {
 
 variable "allowed_branches" {
   description = <<-EOT
-    Branches allowed to assume this role via OIDC. Keep this tight —
-    typically just 'main', since that's what triggers apply/build.
-    PRs from other branches only need plan, which can use a separate,
-    more restricted read-only role if you want stricter separation.
+    Branches allowed to assume this role via OIDC for `push` events
+    (i.e. the apply workflow on push to main). Keep this tight —
+    typically just 'main', since that's what triggers apply.
+    Applies ONLY to push events; pull_request events are gated by
+    `allowed_pr_branches` below.
   EOT
-  type    = list(string)
-  default = ["main"]
+  type        = list(string)
+  default     = ["main"]
+}
+
+variable "allowed_pr_branches" {
+  description = <<-EOT
+    Branches allowed to assume this role via OIDC for `pull_request`
+    events (i.e. the plan workflow running on a PR). Defaults to ["*"]
+    so feature branches work out of the box — without this, raising a
+    PR from a branch other than `main` produces the error:
+        Not authorized to perform sts:AssumeRoleWithWebIdentity
+    because the sub claim is repo:OWNER/REPO:ref:refs/heads/<branch>
+    which doesn't match `allowed_branches` (push-only) or the literal
+    `:pull_request` pattern (fork-PR-only).
+
+    Each entry is matched against the OIDC sub claim with StringLike,
+    so wildcards are supported, e.g.:
+      ["*"]                            — any branch
+      ["release/*", "hotfix/*"]        — only those prefixes
+      ["feature-*", "fix-*"]           — only those prefixes
+
+    Push events remain restricted to `allowed_branches` regardless of
+    this setting, so widening this list does NOT widen who can trigger
+    `terraform apply`.
+  EOT
+  type        = list(string)
+  default     = ["*"]
 }
 
 variable "allow_pull_requests" {
@@ -27,8 +53,8 @@ variable "allow_pull_requests" {
     source branch — scope the attached IAM policy tightly since PR-triggered
     runs are lower-trust (could come from a fork, depending on repo settings).
   EOT
-  type    = bool
-  default = true
+  type        = bool
+  default     = true
 }
 
 variable "role_name" {
@@ -45,8 +71,8 @@ variable "create_oidc_provider" {
     'token.actions.githubusercontent.com' as an OIDC provider in this
     account, set this to false and supply its ARN via existing_oidc_provider_arn.
   EOT
-  type    = bool
-  default = true
+  type        = bool
+  default     = true
 }
 
 variable "existing_oidc_provider_arn" {

@@ -23,7 +23,7 @@ SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN", "")
 def handler(event, context):
     detail = event.get("detail", {})
     status = detail.get("state", {}).get("status")
-    image_arn = detail.get("imageBuildVersionArn") or detail.get("imageVersionArn")
+    image_arn = detail.get("imageArn") or detail.get("imageBuildVersionArn") or detail.get("imageVersionArn")
 
     if status == "AVAILABLE":
         image = imagebuilder.get_image(imageBuildVersionArn=image_arn)

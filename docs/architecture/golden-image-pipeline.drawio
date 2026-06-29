@@ -1,0 +1,538 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-06-29T12:00:00.000Z" agent="Kimchi" version="22.0.0" type="device">
+  <diagram name="Golden Image Pipeline" id="golden-image-pipeline">
+    <mxGraphModel dx="1422" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1800" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ================================================================== -->
+        <!-- TITLE BAR                                                           -->
+        <!-- ================================================================== -->
+        <mxCell id="title" value="Golden Image Pipeline — Enterprise Architecture"
+                style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=24;fontStyle=1;fillColor=#1F2D5C;strokeColor=#1F2D5C;fontColor=#FFFFFF;"
+                vertex="1" parent="1">
+          <mxGeometry x="40" y="10" width="2320" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="subtitle" value="Windows Server 2022 • EC2 Image Builder • Terraform • GitHub Actions OIDC • Multi-Account Distribution"
+                style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1;fillColor=#3B48CC;strokeColor=#3B48CC;fontColor=#FFFFFF;"
+                vertex="1" parent="1">
+          <mxGeometry x="40" y="62" width="2320" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- ================================================================== -->
+        <!-- LEGEND (top-right)                                                  -->
+        <!-- ================================================================== -->
+        <mxCell id="legend" value="LEGEND — Flow Colors&#10;&#10;■ Blue: OIDC authentication&#10;■ Green: Terraform management&#10;■ Orange: Build orchestration&#10;■ Purple: State change events&#10;■ Cyan: Lambda invocation&#10;■ Magenta: SSM / SNS updates&#10;■ Gold: KMS encryption&#10;■ Chocolate: Cross-account dist.&#10;■ Forest green: Downstream read"
+                style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1;fillColor=#FFFFFF;strokeColor=#666666;dashed=1;spacingLeft=8;spacingTop=5;fontColor=#232F3E;"
+                vertex="1" parent="1">
+          <mxGeometry x="1900" y="92" width="450" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- ================================================================== -->
+        <!-- ZONE 1: EXTERNAL CI/CD (GitHub Actions)                             -->
+        <!-- ================================================================== -->
+        <mxCell id="github_zone" value="EXTERNAL — CI/CD  (outside AWS account boundary)"
+                style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0F4FF;strokeColor=#3B48CC;strokeWidth=2;dashed=0;verticalAlign=top;align=left;spacingLeft=10;spacingTop=5;fontSize=13;fontStyle=1;fontColor=#3B48CC;"
+                vertex="1" parent="1">
+          <mxGeometry x="40" y="95" width="1840" height="125" as="geometry" />
+        </mxCell>
+
+        <mxCell id="github_actions" value="GitHub Actions&#10;&#10;• golden-image-build.yml&#10;    (trigger Image Builder pipeline)&#10;&#10;• golden-image-terraform.yml&#10;    (plan / apply infrastructure)"
+                style="rounded=1;whiteSpace=wrap;html=1;fillColor=#24292E;strokeColor=#24292E;fontColor=#FFFFFF;fontSize=12;fontStyle=1;align=center;verticalAlign=middle;strokeWidth=2;"
+                vertex="1" parent="1">
+          <mxGeometry x="100" y="120" width="430" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="github_repo" value="Repo: SinghWorld/b-aws-tf-gha-ec2-imagebuilder&#10;&#10;Branch: main  |  Environment: golden-image-shared-services"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#232F3E;"
+                vertex="1" parent="1">
+          <mxGeometry x="560" y="135" width="600" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="github_secrets" value="GitHub Actions Secrets (encrypted at rest)&#10;&#10;AWS_OIDC_ROLE_ARN&#10;GOLDEN_IMAGE_SUBNET_ID&#10;GOLDEN_IMAGE_SG_IDS&#10;GOLDEN_IMAGE_KMS_KEY_ARN&#10;GOLDEN_IMAGE_DISTRIBUTION_ACCOUNTS&#10;GOLDEN_IMAGE_SNS_TOPIC_ARN"
+                style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8DC;strokeColor=#DAA520;strokeWidth=1;dashed=1;fontSize=10;fontStyle=1;align=left;verticalAlign=middle;spacingLeft=10;fontColor=#232F3E;"
+                vertex="1" parent="1">
+          <mxGeometry x="1200" y="110" width="660" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- ================================================================== -->
+        <!-- ZONE 2: AWS SHARED SERVICES ACCOUNT (HUB)                          -->
+        <!-- ================================================================== -->
+        <mxCell id="hub_account" value="AWS Account: Shared Services (HUB) — Golden Image Factory"
+                style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E7;strokeColor=#FF8C00;strokeWidth=3;dashed=0;verticalAlign=top;align=left;spacingLeft=10;spacingTop=5;fontSize=14;fontStyle=1;fontColor=#FF8C00;"
+                vertex="1" parent="1">
+          <mxGeometry x="40" y="235" width="2320" height="1290" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Sub-zone: Identity & Access ===== -->
+        <mxCell id="identity_zone" value="1.  Identity &amp; Access"
+                style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F0F4FF;strokeColor=#3B48CC;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=3;fontSize=12;fontStyle=1;fontColor=#3B48CC;"
+                vertex="1" parent="1">
+          <mxGeometry x="60" y="265" width="540" height="240" as="geometry" />
+        </mxCell>
+
+        <!-- GitHub OIDC Provider -->
+        <mxCell id="oidc_icon" value="GitHub OIDC Provider"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.identity_and_access_management;"
+                vertex="1" parent="1">
+          <mxGeometry x="80" y="300" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="oidc_label" value="token.actions.githubusercontent.com&#10;(OIDC Identity Provider)&#10;Trust policy: GitHub repo + branch"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#232F3E;"
+                vertex="1" parent="1">
+          <mxGeometry x="150" y="300" width="430" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- GitHub Actions IAM Role -->
+        <mxCell id="gh_role_icon" value="IAM Role"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.role;"
+                vertex="1" parent="1">
+          <mxGeometry x="80" y="375" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="gh_role_label" value="golden-win2022-github-actions-role&#10;Trust: OIDC provider (sub = repo:branch)&#10;Permissions: least-privilege for CI"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#232F3E;"
+                vertex="1" parent="1">
+          <mxGeometry x="150" y="375" width="430" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Image Builder Instance Role -->
+        <mxCell id="ib_role_icon" value="IAM Role"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.role;"
+                vertex="1" parent="1">
+          <mxGeometry x="80" y="450" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ib_role_label" value="Image Builder Instance Role&#10;Attached to: golden-win2022-imagebuilder-profile&#10;Used by: build/test EC2 instances"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#232F3E;"
+                vertex="1" parent="1">
+          <mxGeometry x="150" y="450" width="430" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Sub-zone: Terraform ===== -->
+        <mxCell id="tf_zone" value="2.  Infrastructure as Code"
+                style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F0FFF0;strokeColor=#00A300;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=3;fontSize=12;fontStyle=1;fontColor=#00A300;"
+                vertex="1" parent="1">
+          <mxGeometry x="620" y="265" width="380" height="240" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tf_icon" value="Terraform"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#7B42BC;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.general;"
+                vertex="1" parent="1">
+          <mxGeometry x="640" y="300" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="tf_label" value="Terraform Plan / Apply&#10;&#10;Run via: golden-image-terraform.yml&#10;&#10;Manages all hub-account resources&#10;(pipeline, recipe, infra, distribution,&#10;IAM, Lambda, EB, SSM, S3, KMS, SNS, OIDC)"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#232F3E;"
+                vertex="1" parent="1">
+          <mxGeometry x="710" y="295" width="280" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Sub-zone: EC2 Image Builder Service ===== -->
+        <mxCell id="ib_service_zone" value="3.  EC2 Image Builder Service  (the orchestrator)"
+                style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF0E5;strokeColor=#ED7100;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=3;fontSize=12;fontStyle=1;fontColor=#ED7100;"
+                vertex="1" parent="1">
+          <mxGeometry x="1020" y="265" width="1320" height="240" as="geometry" />
+        </mxCell>
+
+        <!-- Image Pipeline -->
+        <mxCell id="pipeline_icon" value="Image Pipeline"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;"
+                vertex="1" parent="1">
+          <mxGeometry x="1050" y="300" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="pipeline_label" value="Image Pipeline&#10;golden-win2022-pipeline&#10;&#10;• Schedule: cron(0 18 ? * SAT#2 *)&#10;  (Patch-Tuesday-aligned rebuild)&#10;• On-demand: StartPipelineExecution&#10;  (called by golden-image-build.yml)&#10;• Tests enabled: Pester validation&#10;• Timeout: 90 minutes"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#232F3E;"
+                vertex="1" parent="1">
+          <mxGeometry x="1120" y="295" width="320" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- Distribution Configuration -->
+        <mxCell id="dist_cfg_icon" value="Distribution"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#D2691E;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;"
+                vertex="1" parent="1">
+          <mxGeometry x="1050" y="455" width="60" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="dist_cfg_label" value="Distribution Config&#10;golden-win2022-distribution&#10;&#10;• Region: us-east-1 (primary)&#10;• Cross-region: eu-west-1, etc.&#10;• Launch perms: spoke account IDs&#10;• Encrypted with KMS per region"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#232F3E;"
+                vertex="1" parent="1">
+          <mxGeometry x="1120" y="455" width="280" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- Image Recipe -->
+        <mxCell id="recipe_icon" value="Image Recipe"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;"
+                vertex="1" parent="1">
+          <mxGeometry x="1450" y="300" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="recipe_label" value="Image Recipe: golden-win2022-recipe&#10;Base: windows-server-2022-english-full-base-x86/x.x.x (always latest)&#10;Block device: 50 GB gp3, KMS-encrypted, delete-on-termination&#10;lifecycle.create_before_destroy = true (immutable versioning)&#10;&#10;   Build components (run sequentially in ONE instance):&#10;   ┌──── 1. windows-updates (v1.0.2)   — install latest Windows patches&#10;   ├──── 2. cis-hardening  (v1.0.2)    — apply CIS Benchmark baseline&#10;   └──── 3. agent-install  (v1.0.2)    — install SSM Agent + CloudWatch Agent&#10;&#10;   Test component (runs in SEPARATE instance after build):&#10;   └──── 4. validation-test (v1.0.2)  — Pester validation suite"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=#FFF8E7;strokeColor=#ED7100;dashed=0;fontColor=#232F3E;spacingLeft=8;spacingTop=4;"
+                vertex="1" parent="1">
+          <mxGeometry x="1520" y="295" width="800" height="205" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Sub-zone: VPC / Build Environment ===== -->
+        <mxCell id="vpc_zone" value="4.  VPC — Build/Test Environment  (private subnet, SSM-controlled — no SSH/RDP)"
+                style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F0FF;strokeColor=#8C4FFF;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=3;fontSize=12;fontStyle=1;fontColor=#8C4FFF;"
+                vertex="1" parent="1">
+          <mxGeometry x="60" y="525" width="1280" height="490" as="geometry" />
+        </mxCell>
+
+        <!-- Subnet -->
+        <mxCell id="subnet_icon" value="Subnet"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.vpc;"
+                vertex="1" parent="1">
+          <mxGeometry x="90" y="565" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="subnet_label" value="Private Subnet&#10;subnet-xxx&#10;&#10;⚠ MUST have SSM VPC endpoints&#10;  (or NAT/IGW egress):&#10;  • com.amazonaws.&lt;region&gt;.ssm&#10;  • com.amazonaws.&lt;region&gt;.ssmmessages&#10;  • com.amazonaws.&lt;region&gt;.ec2messages&#10;&#10;Image Builder controls instances&#10;via SSM only — no inbound needed"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=#FFFFFF;strokeColor=#8C4FFF;fontColor=#232F3E;spacingLeft=6;spacingTop=4;"
+                vertex="1" parent="1">
+          <mxGeometry x="160" y="560" width="270" height="160" as="geometry" />
+        </mxCell>
+
+        <!-- Security Group -->
+        <mxCell id="sg_icon" value="Security Group"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.security_group;"
+                vertex="1" parent="1">
+          <mxGeometry x="90" y="745" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="sg_label" value="Security Group(s)&#10;sg-xxx&#10;&#10;Egress: HTTPS (443) to AWS APIs&#10;        (+ S3 prefix-list for logs)&#10;Ingress: none required&#10;&#10;Default VPC SG acceptable for sandbox&#10;(tighten for production)"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=#FFFFFF;strokeColor=#DD344C;fontColor=#232F3E;spacingLeft=6;spacingTop=4;"
+                vertex="1" parent="1">
+          <mxGeometry x="160" y="740" width="270" height="160" as="geometry" />
+        </mxCell>
+
+        <!-- Build/Test EC2 -->
+        <mxCell id="ec2_icon" value="EC2"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;"
+                vertex="1" parent="1">
+          <mxGeometry x="470" y="600" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ec2_label" value="Build / Test EC2 Instance (transient)&#10;&#10;═══ PHASE 1: BUILD (one instance) ═══&#10;• Windows Server 2022 base AMI&#10;• t3.medium / t3.large&#10;• Instance Profile: golden-win2022-imagebuilder-profile&#10;• terminate_instance_on_failure = true&#10;&#10;Sequential execution:&#10;  [1] windows-updates  → ✔ patched&#10;  [2] cis-hardening    → ✔ hardened&#10;  [3] agent-install    → ✔ SSM Agent + CloudWatch Agent&#10;  [4] sysprep / snapshot → ✔ AMI captured&#10;&#10;═══ PHASE 2: TEST (separate instance) ═══&#10;• Launched from the AMI just built&#10;• Runs Pester validation-test component&#10;• Tests agents, services, hardening state&#10;• Pass/fail gates pipeline → AVAILABLE/FAILED"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=#FFF0E5;strokeColor=#ED7100;fontColor=#232F3E;spacingLeft=8;spacingTop=4;"
+                vertex="1" parent="1">
+          <mxGeometry x="560" y="565" width="750" height="445" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Sub-zone: Storage & KMS ===== -->
+        <mxCell id="storage_zone" value="5.  Storage &amp; Encryption"
+                style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F0FFF0;strokeColor=#7AA116;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=3;fontSize=12;fontStyle=1;fontColor=#7AA116;"
+                vertex="1" parent="1">
+          <mxGeometry x="1360" y="525" width="480" height="490" as="geometry" />
+        </mxCell>
+
+        <!-- S3 Logs -->
+        <mxCell id="s3_icon" value="S3 Logs"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#7AA116;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;"
+                vertex="1" parent="1">
+          <mxGeometry x="1390" y="565" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_label" value="S3 Logging Bucket&#10;golden-win2022-imagebuilder-logs-&lt;acct&gt;&#10;&#10;• Holds all build &amp; test logs&#10;• 180-day lifecycle expiration&#10;• Block public access ON&#10;• Bucket policy: grants&#10;  imagebuilder.amazonaws.com&#10;  s3:PutObject (scoped to SourceAccount)&#10;• Key prefix: image-builder-logs/..."
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=#FFFFFF;strokeColor=#7AA116;fontColor=#232F3E;spacingLeft=6;spacingTop=4;"
+                vertex="1" parent="1">
+          <mxGeometry x="1460" y="560" width="370" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- KMS Key -->
+        <mxCell id="kms_icon" value="KMS"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.kms;"
+                vertex="1" parent="1">
+          <mxGeometry x="1390" y="800" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="kms_label" value="KMS Customer Master Key&#10;alias/golden-win2022-sandbox&#10;&#10;Created outside Terraform&#10;(bootstrap-sandbox.sh Step 4)&#10;&#10;Encrypts:&#10;  • EBS root volume on build EC2&#10;  • Final AMI snapshots (primary region)&#10;  • Distributed AMI copies (per-region keys)"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=#FFFFFF;strokeColor=#DD344C;fontColor=#232F3E;spacingLeft=6;spacingTop=4;"
+                vertex="1" parent="1">
+          <mxGeometry x="1460" y="795" width="370" height="215" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Sub-zone: Post-build Automation ===== -->
+        <mxCell id="post_build_zone" value="6.  Post-Build Automation  (event-driven glue)"
+                style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF0F5;strokeColor=#CC2264;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=3;fontSize=12;fontStyle=1;fontColor=#CC2264;"
+                vertex="1" parent="1">
+          <mxGeometry x="1860" y="525" width="480" height="490" as="geometry" />
+        </mxCell>
+
+        <!-- EventBridge -->
+        <mxCell id="eb_icon" value="EventBridge"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#CC2264;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eventbridge;"
+                vertex="1" parent="1">
+          <mxGeometry x="1890" y="565" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="eb_label" value="EventBridge Rule&#10;golden-win2022-image-state-change&#10;&#10;Event pattern:&#10;  source      = aws.imagebuilder&#10;  detail-type = EC2 Image Builder Image State Change&#10;  detail.state.status = AVAILABLE | FAILED&#10;&#10;Target: Lambda function"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=#FFFFFF;strokeColor=#CC2264;fontColor=#232F3E;spacingLeft=6;spacingTop=4;"
+                vertex="1" parent="1">
+          <mxGeometry x="1960" y="560" width="370" height="170" as="geometry" />
+        </mxCell>
+
+        <!-- Lambda -->
+        <mxCell id="lambda_icon" value="Lambda"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#7155ED;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda_function;"
+                vertex="1" parent="1">
+          <mxGeometry x="1890" y="755" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda_label" value="Lambda: golden-win2022-update-ssm-param&#10;&#10;Runtime: Python 3.12 | Timeout: 30 s&#10;Env vars: SSM_PARAMETER_NAME, SNS_TOPIC_ARN&#10;&#10;On AVAILABLE:&#10;  1. imagebuilder:GetImage → new AMI ID&#10;  2. ssm:PutParameter → /golden-images/.../latest-ami-id&#10;  3. sns:Publish → notify team/Slack&#10;&#10;IAM: least-privilege (SSM, imagebuilder, SNS, CW Logs)"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=#FFFFFF;strokeColor=#7155ED;fontColor=#232F3E;spacingLeft=6;spacingTop=4;"
+                vertex="1" parent="1">
+          <mxGeometry x="1960" y="750" width="370" height="175" as="geometry" />
+        </mxCell>
+
+        <!-- SSM Parameter -->
+        <mxCell id="ssm_icon" value="SSM"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#759C3E;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.systems_manager;"
+                vertex="1" parent="1">
+          <mxGeometry x="1890" y="945" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ssm_label" value="SSM Parameter Store&#10;/golden-images/golden-win2022/latest-ami-id&#10;&#10;★ Source of truth for downstream TF&#10;  (NEVER hardcode AMI IDs!)&#10;&#10;Updated by Lambda on build success.&#10;lifecycle.ignore_changes = [value]&#10;(TF won't fight the automation)"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=#FFFFFF;strokeColor=#759C3E;fontColor=#232F3E;spacingLeft=6;spacingTop=4;"
+                vertex="1" parent="1">
+          <mxGeometry x="1960" y="940" width="370" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- SNS Topic -->
+        <mxCell id="sns_icon" value="SNS"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#D45A07;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sns;"
+                vertex="1" parent="1">
+          <mxGeometry x="2120" y="945" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="sns_label" value="SNS Topic  (optional)&#10;&#10;Build notification →&#10;team email / Slack / PagerDuty&#10;&#10;Empty in sandbox&#10;(var.sns_topic_arn = &quot;&quot;)"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=#FFFFFF;strokeColor=#D45A07;fontColor=#232F3E;spacingLeft=6;spacingTop=4;"
+                vertex="1" parent="1">
+          <mxGeometry x="2180" y="940" width="150" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ================================================================== -->
+        <!-- ZONE 3: SPOKE ACCOUNTS (Cross-Account / Cross-Region)              -->
+        <!-- ================================================================== -->
+        <mxCell id="spoke_zone" value="7.  Cross-Account / Cross-Region Distribution  (AMI copies to spoke accounts)"
+                style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FFF0;strokeColor=#228B22;strokeWidth=2;dashed=0;verticalAlign=top;align=left;spacingLeft=10;spacingTop=5;fontSize=13;fontStyle=1;fontColor=#228B22;"
+                vertex="1" parent="1">
+          <mxGeometry x="40" y="1545" width="1640" height="240" as="geometry" />
+        </mxCell>
+
+        <!-- Spoke 1 -->
+        <mxCell id="spoke1_box" value="Spoke Account A&#10;(us-east-1)"
+                style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#228B22;strokeWidth=2;fontSize=12;fontStyle=1;align=center;verticalAlign=top;spacingTop=8;fontColor=#228B22;"
+                vertex="1" parent="1">
+          <mxGeometry x="80" y="1610" width="320" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="spoke1_ami" value="ami-xxxxx (encrypted)&#10;Launch perms: account A&#10;Tags: Project=golden-image-lab"
+                style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#228B22;strokeWidth=1;dashed=1;fontSize=10;fontStyle=1;align=center;verticalAlign=middle;fontColor=#232F3E;"
+                vertex="1" parent="1">
+          <mxGeometry x="100" y="1665" width="280" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Spoke 2 -->
+        <mxCell id="spoke2_box" value="Spoke Account B&#10;(us-east-1)"
+                style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#228B22;strokeWidth=2;fontSize=12;fontStyle=1;align=center;verticalAlign=top;spacingTop=8;fontColor=#228B22;"
+                vertex="1" parent="1">
+          <mxGeometry x="430" y="1610" width="320" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="spoke2_ami" value="ami-yyyyy (encrypted)&#10;Launch perms: account B&#10;Tags: Project=golden-image-lab"
+                style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#228B22;strokeWidth=1;dashed=1;fontSize=10;fontStyle=1;align=center;verticalAlign=middle;fontColor=#232F3E;"
+                vertex="1" parent="1">
+          <mxGeometry x="450" y="1665" width="280" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Spoke 3 (cross-region) -->
+        <mxCell id="spoke3_box" value="Spoke Account A&#10;(eu-west-1 — cross-region)"
+                style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#228B22;strokeWidth=2;fontSize=12;fontStyle=1;align=center;verticalAlign=top;spacingTop=8;fontColor=#228B22;"
+                vertex="1" parent="1">
+          <mxGeometry x="780" y="1610" width="320" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="spoke3_ami" value="ami-zzzzz (encrypted)&#10;Region-local KMS key&#10;Requires kms:Decrypt grant"
+                style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#228B22;strokeWidth=1;dashed=1;fontSize=10;fontStyle=1;align=center;verticalAlign=middle;fontColor=#232F3E;"
+                vertex="1" parent="1">
+          <mxGeometry x="800" y="1665" width="280" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Spoke 4 (cross-region) -->
+        <mxCell id="spoke4_box" value="Spoke Account B&#10;(ap-south-1 — cross-region)"
+                style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#228B22;strokeWidth=2;fontSize=12;fontStyle=1;align=center;verticalAlign=top;spacingTop=8;fontColor=#228B22;"
+                vertex="1" parent="1">
+          <mxGeometry x="1130" y="1610" width="320" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="spoke4_ami" value="ami-wwwww (encrypted)&#10;Region-local KMS key&#10;Requires kms:Decrypt grant"
+                style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#228B22;strokeWidth=1;dashed=1;fontSize=10;fontStyle=1;align=center;verticalAlign=middle;fontColor=#232F3E;"
+                vertex="1" parent="1">
+          <mxGeometry x="1150" y="1665" width="280" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- ================================================================== -->
+        <!-- ZONE 4: DOWNSTREAM CONSUMERS                                       -->
+        <!-- ================================================================== -->
+        <mxCell id="downstream_zone" value="8.  Downstream Consumers  (read AMI ID from SSM Parameter)"
+                style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8DC;strokeColor=#DAA520;strokeWidth=2;dashed=0;verticalAlign=top;align=left;spacingLeft=10;spacingTop=5;fontSize=13;fontStyle=1;fontColor=#B8860B;"
+                vertex="1" parent="1">
+          <mxGeometry x="1700" y="1545" width="660" height="240" as="geometry" />
+        </mxCell>
+
+        <!-- Consumer 1: ASG -->
+        <mxCell id="consumer1_icon" value="EC2"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;"
+                vertex="1" parent="1">
+          <mxGeometry x="1730" y="1620" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="consumer1_label" value="EC2 Auto Scaling Groups&#10;&#10;ami = data.aws_ssm_parameter.&#10;       golden_ami.value&#10;&#10;Always launches the&#10;latest validated image"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#232F3E;"
+                vertex="1" parent="1">
+          <mxGeometry x="1800" y="1615" width="280" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Consumer 2: Launch Templates + other TF -->
+        <mxCell id="consumer2_icon" value="Terraform"
+                style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#7B42BC;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.general;"
+                vertex="1" parent="1">
+          <mxGeometry x="1730" y="1725" width="60" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="consumer2_label" value="Launch Templates + other Terraform stacks&#10;Read /golden-images/.../latest-ami-id&#10;→ keep deployment in sync automatically"
+                style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#232F3E;"
+                vertex="1" parent="1">
+          <mxGeometry x="1800" y="1720" width="540" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- ================================================================== -->
+        <!-- ARROWS — Auth &amp; Trigger flows                                   -->
+        <!-- ================================================================== -->
+
+        <!-- 1. GitHub Actions → OIDC Provider (blue, OIDC token) -->
+        <mxCell id="a_gh_oidc" value="1.  OIDC token"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#0066CC;strokeWidth=3;endArrow=block;endFill=1;fontSize=10;fontStyle=1;fontColor=#0066CC;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="github_actions" target="oidc_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 2. OIDC Provider → GitHub Actions IAM Role (blue, sts:AssumeRole) -->
+        <mxCell id="a_oidc_role" value="2.  sts:AssumeRoleWithWebIdentity"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#0066CC;strokeWidth=3;endArrow=block;endFill=1;fontSize=10;fontStyle=1;fontColor=#0066CC;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="oidc_icon" target="gh_role_label">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 3. GitHub Actions → Terraform (green, runs TF) -->
+        <mxCell id="a_gh_tf" value="3.  terraform init/plan/apply"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#00A300;strokeWidth=3;endArrow=block;endFill=1;fontSize=10;fontStyle=1;fontColor=#00A300;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="github_actions" target="tf_label">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 4. Terraform → manages all AWS resources (dashed green) -->
+        <mxCell id="a_tf_manages" value="4.  Terraform manages  (all hub-account resources)"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#00A300;strokeWidth=2;endArrow=open;endFill=0;dashed=1;dashPattern=8 8;fontSize=10;fontStyle=1;fontColor=#00A300;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="tf_label" target="hub_account">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 5. GitHub Actions IAM Role → Image Pipeline (orange, start build) -->
+        <mxCell id="a_role_pipeline" value="5.  StartImagePipelineExecution"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#FF6600;strokeWidth=3;endArrow=block;endFill=1;fontSize=10;fontStyle=1;fontColor=#FF6600;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="gh_role_label" target="pipeline_label">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 6. Image Pipeline → Recipe (orange, references) -->
+        <mxCell id="a_pipeline_recipe" value="6.  uses"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#FF6600;strokeWidth=2;endArrow=block;endFill=1;fontSize=10;fontStyle=1;fontColor=#FF6600;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="pipeline_label" target="recipe_label">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 7. Image Pipeline → Build EC2 (orange, orchestrate) -->
+        <mxCell id="a_pipeline_ec2" value="7.  launch &amp; orchestrate&#10;(via SSM)"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#ED7100;strokeWidth=3;endArrow=block;endFill=1;fontSize=10;fontStyle=1;fontColor=#ED7100;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="pipeline_label" target="ec2_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 8. Build EC2 → S3 Logs (gold, stream logs) -->
+        <mxCell id="a_ec2_s3" value="8.  stream build &amp; test logs"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#DAA520;strokeWidth=3;endArrow=block;endFill=1;fontSize=10;fontStyle=1;fontColor=#B8860B;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="ec2_label" target="s3_label">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 9. Build EC2 → KMS Key (gold, encrypts EBS) -->
+        <mxCell id="a_ec2_kms" value="9.  encrypts EBS root volume"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#B8860B;strokeWidth=3;endArrow=block;endFill=1;fontSize=10;fontStyle=1;fontColor=#B8860B;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="ec2_label" target="kms_label">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 10. Image Pipeline → Distribution Config (chocolate) -->
+        <mxCell id="a_pipeline_dist" value="10.  golden-win2022-distribution"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#D2691E;strokeWidth=3;endArrow=block;endFill=1;fontSize=10;fontStyle=1;fontColor=#D2691E;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="dist_cfg_label" target="spoke1_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 11. Image Pipeline → EventBridge (purple, state change) -->
+        <mxCell id="a_pipeline_eb" value="11.  Image State Change&#10;(AVAILABLE / FAILED)"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#7B68EE;strokeWidth=3;endArrow=block;endFill=1;fontSize=10;fontStyle=1;fontColor=#5D4FB5;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="pipeline_label" target="eb_label">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 12. EventBridge → Lambda (cyan, invoke) -->
+        <mxCell id="a_eb_lambda" value="12.  invoke"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#00BFFF;strokeWidth=3;endArrow=block;endFill=1;fontSize=10;fontStyle=1;fontColor=#0099CC;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="eb_label" target="lambda_label">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 13. Lambda → SSM Parameter (magenta, PutParameter) -->
+        <mxCell id="a_lambda_ssm" value="13.  ssm:PutParameter&#10;(latest AMI ID)"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#FF1493;strokeWidth=3;endArrow=block;endFill=1;fontSize=10;fontStyle=1;fontColor=#C2185B;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="lambda_label" target="ssm_label">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 14. Lambda → SNS Topic (pink, publish) -->
+        <mxCell id="a_lambda_sns" value="14.  sns:Publish"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#FF69B4;strokeWidth=3;endArrow=block;endFill=1;fontSize=10;fontStyle=1;fontColor=#D81B60;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="lambda_label" target="sns_label">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 15. SSM Parameter → Downstream Consumers (forest green) -->
+        <mxCell id="a_ssm_consumer" value="15.  data.aws_ssm_parameter.golden_ami"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#228B22;strokeWidth=3;endArrow=block;endFill=1;fontSize=10;fontStyle=1;fontColor=#1B5E20;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="ssm_label" target="consumer1_label">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 16. Spoke AMI → Consumer (forest green, launch) -->
+        <mxCell id="a_spoke_consumer" value="16.  launch EC2 from spoke AMI"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#228B22;strokeWidth=3;endArrow=block;endFill=1;fontSize=10;fontStyle=1;fontColor=#1B5E20;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="spoke4_ami" target="consumer1_label">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 17. Image Pipeline → Recipe — already covered by #6 -->
+        <!-- 18. Subnet contains EC2 (implicit grouping) -->
+        <!-- 19. EC2 uses Subnet + SG (grouping) -->
+        <mxCell id="a_subnet_ec2" value="lives in"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#8C4FFF;strokeWidth=1;endArrow=open;endFill=0;dashed=1;dashPattern=4 4;fontSize=9;fontStyle=1;fontColor=#8C4FFF;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="subnet_label" target="ec2_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a_sg_ec2" value="protected by"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#DD344C;strokeWidth=1;endArrow=open;endFill=0;dashed=1;dashPattern=4 4;fontSize=9;fontStyle=1;fontColor=#DD344C;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="sg_label" target="ec2_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 20. IB Instance Role attached to Instance Profile (grouping) -->
+        <mxCell id="a_role_profile" value="attached to"
+                style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#DD344C;strokeWidth=1;endArrow=open;endFill=0;dashed=1;dashPattern=4 4;fontSize=9;fontStyle=1;fontColor=#DD344C;labelBackgroundColor=#FFFFFF;"
+                edge="1" parent="1" source="ib_role_label" target="ec2_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ================================================================== -->
+        <!-- (footer removed — flow summary is already captured in the legend   -->
+        <!--  in the top-right corner of the diagram)                            -->
+        <!-- ================================================================== -->
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

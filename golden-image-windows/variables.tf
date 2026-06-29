@@ -1,3 +1,34 @@
+## ---------------------------------------------------------------------------
+## BACKEND / STATE BUCKET
+## ---------------------------------------------------------------------------
+## The S3 bucket that stores Terraform state is created OUT-OF-BAND by
+## bootstrap-sandbox.sh — it cannot live inside this module's own state
+## (chicken-and-egg with the backend block). The three values below tell
+## the backend block in provider.tf where to read/write state.
+##
+## Local: bootstrap-sandbox.sh writes backend.hcl, and you run
+##   terraform init -backend-config=backend.hcl
+## CI   : golden-image-terraform.yml reads TF_STATE_BUCKET /
+##        TF_STATE_REGION / TF_STATE_KEY from secrets and passes them
+##        as -backend-config flags.
+variable "tf_state_bucket" {
+  description = "S3 bucket that holds the Terraform remote state. Must exist before `terraform init`."
+  type        = string
+  default     = null # must be supplied — no sensible default for a state bucket
+}
+
+variable "tf_state_region" {
+  description = "AWS region of the state bucket. May differ from var.aws_region."
+  type        = string
+  default     = null # must be supplied
+}
+
+variable "tf_state_key" {
+  description = "Object key (path) of the state file inside the bucket."
+  type        = string
+  default     = "golden-image-windows/terraform.tfstate"
+}
+
 variable "name_prefix" {
   description = "Prefix used for naming all resources (e.g. 'golden-win2022')"
   type        = string
@@ -57,7 +88,7 @@ variable "distribution_regions" {
   description = "Map of region => list of target account IDs for that region. Allows multi-region distribution."
   type = map(object({
     target_account_ids = list(string)
-    ami_name            = string
+    ami_name           = string
   }))
   default = {}
 }

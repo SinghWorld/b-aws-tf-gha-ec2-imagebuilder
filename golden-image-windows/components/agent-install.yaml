@@ -5,32 +5,113 @@ schemaVersion: 1.0
 phases:
   - name: build
     steps:
-      - name: UpdateSSMAgent
+      # Image Builder pre-installs SSM Agent on every Windows build instance via the
+      # EC2InstanceProfileForImageBuilder managed policy. We just verify the version
+      # here -- no need to redownload/reinstall, which is what was causing transient
+      # network failures to take down the build.
+      - name: VerifySSMAgent
         action: ExecutePowerShell
         inputs:
           commands:
             - |
-              Write-Host "Updating SSM Agent to latest..."
-              $progressPreference = 'SilentlyContinue'
-              Invoke-WebRequest "https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe" -OutFile "$env:TEMP\SSMAgentSetup.exe"
-              Start-Process -FilePath "$env:TEMP\SSMAgentSetup.exe" -ArgumentList "/S" -Wait
-              Write-Host "SSM Agent updated."
+              $ErrorActionPreference = 'Continue'
+
+              $svc = Get-Service -Name AmazonSSMAgent -ErrorAction SilentlyContinue
+              if (-not $svc) {
+                Write-Host "FAIL: AmazonSSMAgent service is not installed. Image Builder should have pre-installed it."
+                exit 1
+              }
+
+              Write-Host "SSM Agent service status: $($svc.Status)"
+
+              # Optional best-effort version check
+              $ssmExe = (Get-Command amazon-ssm-agent.exe -ErrorAction SilentlyContinue)
+              if ($ssmExe) {
+                try {
+                  & amazon-ssm-agent.exe --version 2>&1 | ForEach-Object { Write-Host "SSM Agent version: $_" }
+                } catch {
+                  Write-Host "SSM Agent version check skipped: $_"
+                }
+              }
+
+              if ($svc.Status -ne 'Running') {
+                Write-Host "SSM Agent not running -- attempting to start."
+                try {
+                  Start-Service -Name AmazonSSMAgent -ErrorAction Stop
+                  Start-Sleep -Seconds 5
+                  $svc.Refresh()
+                  if ($svc.Status -ne 'Running') {
+                    Write-Host "FAIL: SSM Agent still not running after Start-Service."
+                    exit 1
+                  }
+                } catch {
+                  Write-Host "FAIL: Could not start SSM Agent: $_"
+                  exit 1
+                }
+              }
+
+              Write-Host "PASS: SSM Agent present and running."
 
       - name: InstallCloudWatchAgent
         action: ExecutePowerShell
         inputs:
           commands:
             - |
-              Write-Host "Installing CloudWatch Agent..."
-              $progressPreference = 'SilentlyContinue'
-              Invoke-WebRequest "https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi" -OutFile "$env:TEMP\amazon-cloudwatch-agent.msi"
-              Start-Process msiexec.exe -ArgumentList "/i `"$env:TEMP\amazon-cloudwatch-agent.msi`" /qn" -Wait
-              Write-Host "CloudWatch Agent installed."
+              $ErrorActionPreference = 'Continue'
 
-              # NOTE: Agent config (which logs/metrics to ship) is intentionally
-              # NOT baked in here — push it via SSM Parameter Store + the
-              # amazon-cloudwatch-agent-ctl config-from-ssm flow at instance
-              # launch time instead. Keeps the golden image environment-agnostic.
+              $cw = Get-Service -Name AmazonCloudWatchAgent -ErrorAction SilentlyContinue
+              if ($cw) {
+                Write-Host "CloudWatch Agent already installed (service present). Skipping download."
+                exit 0
+              }
+
+              Write-Host "Downloading CloudWatch Agent installer..."
+              $msiPath = "$env:TEMP\amazon-cloudwatch-agent.msi"
+              $url = "https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi"
+
+              $maxAttempts = 3
+              $attempt = 0
+              $downloaded = $false
+              while ($attempt -lt $maxAttempts -and -not $downloaded) {
+                $attempt++
+                try {
+                  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                  Invoke-WebRequest -Uri $url -OutFile $msiPath -UseBasicParsing -ErrorAction Stop
+                  $downloaded = $true
+                  Write-Host "Downloaded CloudWatch Agent installer (attempt $attempt)."
+                } catch {
+                  Write-Host "Download attempt $attempt failed: $_"
+                  if ($attempt -lt $maxAttempts) {
+                    Write-Host "Retrying in 15s..."
+                    Start-Sleep -Seconds 15
+                  }
+                }
+              }
+
+              if (-not $downloaded) {
+                Write-Host "FAIL: Could not download CloudWatch Agent MSI after $maxAttempts attempts."
+                exit 1
+              }
+
+              Write-Host "Installing CloudWatch Agent (silent)..."
+              $p = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$msiPath`" /qn" -Wait -PassThru -ErrorAction SilentlyContinue
+              if ($p.ExitCode -ne 0) {
+                Write-Host "FAIL: CloudWatch Agent installer exited with code $($p.ExitCode)."
+                exit 1
+              }
+
+              # Wait briefly for the service to register
+              Start-Sleep -Seconds 10
+
+              $cw = Get-Service -Name AmazonCloudWatchAgent -ErrorAction SilentlyContinue
+              if (-not $cw) {
+                Write-Host "FAIL: CloudWatch Agent service not found after install."
+                exit 1
+              }
+
+              Write-Host "PASS: CloudWatch Agent installed."
+              Write-Host "NOTE: Agent config is intentionally NOT baked in here -- push it via SSM Parameter Store"
+              Write-Host "      and the amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s command at launch."
 
       - name: PlaceholderForEDRAgent
         action: ExecutePowerShell
@@ -38,7 +119,7 @@ phases:
           commands:
             - |
               Write-Host "Placeholder: insert your org's EDR/AV agent install here (e.g. CrowdStrike, Defender for Endpoint onboarding)."
-              Write-Host "Pull the installer/token from S3 or Secrets Manager at build time — never hardcode credentials in this component."
+              Write-Host "Pull the installer/token from S3 or Secrets Manager at build time -- never hardcode credentials in this component."
 
   - name: validate
     steps:
@@ -47,16 +128,33 @@ phases:
         inputs:
           commands:
             - |
-              $ssm = Get-Service -Name AmazonSSMAgent -ErrorAction SilentlyContinue
-              $cw = Get-Service -Name AmazonCloudWatchAgent -ErrorAction SilentlyContinue
+              $ErrorActionPreference = 'Continue'
 
+              $ssm = Get-Service -Name AmazonSSMAgent -ErrorAction SilentlyContinue
+              $cw  = Get-Service -Name AmazonCloudWatchAgent -ErrorAction SilentlyContinue
+
+              $failed = $false
               if (-not $ssm) {
                 Write-Host "FAIL: AmazonSSMAgent service not found."
-                exit 1
+                $failed = $true
+              } elseif ($ssm.Status -ne 'Running') {
+                Write-Host "WARN: AmazonSSMAgent is installed but not running (status: $($ssm.Status))."
+              } else {
+                Write-Host "PASS: AmazonSSMAgent is running."
               }
+
               if (-not $cw) {
                 Write-Host "FAIL: AmazonCloudWatchAgent service not found."
+                $failed = $true
+              } elseif ($cw.Status -ne 'Running') {
+                Write-Host "INFO: AmazonCloudWatchAgent is installed but not started (it's designed to be triggered via SSM at launch)."
+              } else {
+                Write-Host "PASS: AmazonCloudWatchAgent is running."
+              }
+
+              if ($failed) {
+                Write-Host "Validate phase failed -- blocking image promotion."
                 exit 1
               }
 
-              Write-Host "PASS: Required agent services present."
+              Write-Host "Required agent services verified."
