@@ -296,7 +296,7 @@ push_secrets_via_gh() {
   echo "  GOLDEN_IMAGE_SG_IDS                = [\"${SECURITY_GROUP_ID}\"]"
   echo "  GOLDEN_IMAGE_KMS_KEY_ARN           = ${KMS_KEY_ARN}"
   echo "  GOLDEN_IMAGE_DISTRIBUTION_ACCOUNTS = []"
-  echo "  GOLDEN_IMAGE_SNS_TOPIC_ARN         = (empty string)"
+  echo "  GOLDEN_IMAGE_SNS_TOPIC_ARN         = (empty value — will be cleared, not set)"
   echo ""
   read -rp "Push these secrets to ${GITHUB_ORG}/${GITHUB_REPO} now? (yes/no): " CONFIRM_SECRETS
 
@@ -311,6 +311,24 @@ push_secrets_via_gh() {
   set_one_secret() {
     local name="$1"
     local value="$2"
+
+    # `gh secret set --body ""` is a footgun: gh interprets an empty --body
+    # value as "no body provided" and blocks reading the secret from stdin,
+    # which hangs the script forever in a non-interactive run.
+    #
+    # GitHub Actions evaluates `${{ secrets.X }}` to "" both for an unset
+    # secret AND for one set to the empty string, so for empty values the
+    # correct behaviour is to make sure the secret does NOT exist (clear
+    # any stale value, or note it's already absent).
+    if [[ -z "$value" ]]; then
+      if gh secret delete "$name" --repo "${GITHUB_ORG}/${GITHUB_REPO}" 2>/dev/null; then
+        echo "  ∅ cleared (empty value): $name"
+      else
+        echo "  - not present (empty value, skipped): $name"
+      fi
+      return 0
+    fi
+
     if gh secret set "$name" --repo "${GITHUB_ORG}/${GITHUB_REPO}" --body "$value" &> /dev/null; then
       echo "  ✓ set: $name"
     else
