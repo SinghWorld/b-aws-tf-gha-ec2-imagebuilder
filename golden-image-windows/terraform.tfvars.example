@@ -46,7 +46,18 @@ tags = {
 # --- GitHub OIDC ---
 github_org           = "mrbalraj007"
 github_repo          = "golden-image-windows"   # adjust to your actual repo name
+
+# Push events (triggers `terraform apply`). Keep this TIGHT — typically
+# just `main`.
 allowed_branches     = ["main"]
+
+# pull_request events (triggers `terraform plan`). Defaults to ["*"]
+# via the variable's own default, so feature-branch PRs work out of
+# the box. Wildcards are matched with StringLike, so e.g.
+# ["release/*", "hotfix/*"] also works. Set explicitly here to lock
+# down which branches can run plan.
+# allowed_pr_branches  = ["*"]
+
 allow_pull_requests  = true
 role_name            = "golden-image-github-actions-role"
 
