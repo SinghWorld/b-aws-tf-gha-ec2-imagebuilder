@@ -113,9 +113,9 @@ phases:
               Write-Host "================================================"
 
               if ($result.FailedCount -gt 0) {
-                  Write-Host "VALIDATION FAILED — blocking image promotion."
+                  Write-Host "VALIDATION FAILED -- blocking image promotion."
                   foreach ($t in $result.Failed) {
-                      Write-Host "  FAILED: $($t.ExpandedPath) — $($t.ErrorRecord.Exception.Message)"
+                      Write-Host "  FAILED: $($t.ExpandedPath) -- $($t.ErrorRecord.Exception.Message)"
                   }
                   exit 1
               }

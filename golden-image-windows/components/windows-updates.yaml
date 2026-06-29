@@ -26,7 +26,7 @@ phases:
               } catch {
                 Write-Host "WARNING: Failed to bootstrap PSWindowsUpdate module: $_"
                 Write-Host "Skipping Windows Update install. The AMI will use the patch level of the base image."
-                Write-Host "This is non-fatal — the build will continue and the next scheduled run will retry."
+                Write-Host "This is non-fatal -- the build will continue and the next scheduled run will retry."
                 exit 0
               }
 
@@ -35,7 +35,7 @@ phases:
                 $updates = Get-WindowsUpdate -ErrorAction Stop
               } catch {
                 Write-Host "WARNING: Get-WindowsUpdate failed: $_"
-                Write-Host "Skipping update install — proceeding with current patch level."
+                Write-Host "Skipping update install -- proceeding with current patch level."
                 exit 0
               }
 
@@ -48,7 +48,7 @@ phases:
               Write-Host "(Reboot will be handled explicitly by the RebootAfterUpdates step below.)"
 
               # Use -AutoReboot:$false so the cmdlet never invokes a reboot itself.
-              # If a reboot IS required, we exit 3010 explicitly — AWSTOE has special
+              # If a reboot IS required, we exit 3010 explicitly -- AWSTOE has special
               # handling for that code in the build phase.
               try {
                 $result = Install-WindowsUpdate -AcceptAll -AutoReboot:$false -Confirm:$false -ErrorAction Stop
@@ -70,10 +70,10 @@ phases:
                 Write-Host "All updates installed. No reboot required."
                 exit 0
               } catch {
-                # Don't fail the build on a partial install — log and continue.
+                # Don't fail the build on a partial install -- log and continue.
                 # Missing updates will be picked up on the next scheduled cycle.
                 Write-Host "WARNING: Install-WindowsUpdate encountered errors: $_"
-                Write-Host "Continuing build — remaining updates will be applied on next cycle."
+                Write-Host "Continuing build -- remaining updates will be applied on next cycle."
                 exit 0
               }
 
@@ -98,7 +98,7 @@ phases:
                 # Windows Update service can be in 'starting' state right after a reboot.
                 # Treat that as "could not verify" rather than failing the build.
                 Write-Host "WARNING: Could not query Windows Update state post-reboot: $_"
-                Write-Host "Validate phase is informational — build is not blocked on this."
+                Write-Host "Validate phase is informational -- build is not blocked on this."
                 exit 0
               }
 
@@ -108,5 +108,5 @@ phases:
                 exit 0
               }
 
-              Write-Host "Patch baseline confirmed current — no pending updates."
+              Write-Host "Patch baseline confirmed current -- no pending updates."
               exit 0

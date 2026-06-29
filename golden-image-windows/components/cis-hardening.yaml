@@ -26,7 +26,7 @@ phases:
 
               # --- Disable SMBv1 (CIS 18.3.x) ---
               # The -Online source files must be present on the base image. On minimal
-              # AMIs this can throw "source files could not be found" — that's a
+              # AMIs this can throw "source files could not be found" -- that's a
               # warning here, not a failure. The validate phase below checks the
               # final state instead of relying on this single call.
               try {
@@ -58,7 +58,7 @@ phases:
                 Write-Host "WARN: Set-NetFirewallProfile failed: $_"
               }
 
-              # --- Disable LLMNR (CIS 18.x — common lateral movement vector) ---
+              # --- Disable LLMNR (CIS 18.x -- common lateral movement vector) ---
               try {
                 $llmnrPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient"
                 if (-not (Test-Path $llmnrPath)) {
@@ -121,14 +121,14 @@ phases:
                 Write-Host "WARN: Could not check Guest account: $_"
               }
 
-              # SMBv1 disabled (informational — source files may not exist on minimal base)
+              # SMBv1 disabled (informational -- source files may not exist on minimal base)
               try {
                 $smb1 = Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -ErrorAction Stop
                 if ($smb1.State -eq 'Disabled') {
                   Write-Host "PASS: SMBv1 is disabled."
                 } else {
-                  Write-Host "WARN: SMBv1 state is '$($smb1.State)' — could not confirm disabled."
-                  # Don't fail on this one — source files may not be available
+                  Write-Host "WARN: SMBv1 state is '$($smb1.State)' -- could not confirm disabled."
+                  # Don't fail on this one -- source files may not be available
                 }
               } catch {
                 Write-Host "WARN: Could not query SMBv1 state: $_"
@@ -162,7 +162,7 @@ phases:
               }
 
               if ($failed) {
-                Write-Host "CIS validation FAILED — blocking image promotion."
+                Write-Host "CIS validation FAILED -- blocking image promotion."
                 exit 1
               }
 
