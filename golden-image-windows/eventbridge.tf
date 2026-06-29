@@ -94,18 +94,18 @@ resource "aws_iam_role_policy" "lambda_update_policy" {
 }
 
 resource "aws_lambda_function" "update_golden_ami_parameter" {
-  function_name = "${var.name_prefix}-update-ssm-param"
-  role          = aws_iam_role.lambda_update_role.arn
-  handler       = "index.handler"
-  runtime       = "python3.12"
-  timeout       = 30
-  filename      = "${path.module}/lambda/update_ssm_param.zip"
+  function_name    = "${var.name_prefix}-update-ssm-param"
+  role             = aws_iam_role.lambda_update_role.arn
+  handler          = "index.handler"
+  runtime          = "python3.12"
+  timeout          = 30
+  filename         = "${path.module}/lambda/update_ssm_param.zip"
   source_code_hash = filebase64sha256("${path.module}/lambda/update_ssm_param.zip")
 
   environment {
     variables = {
       SSM_PARAMETER_NAME = aws_ssm_parameter.golden_ami_latest.name
-      SNS_TOPIC_ARN       = var.sns_topic_arn
+      SNS_TOPIC_ARN      = var.sns_topic_arn
     }
   }
 

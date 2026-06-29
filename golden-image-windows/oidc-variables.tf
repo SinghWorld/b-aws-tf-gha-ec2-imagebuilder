@@ -15,8 +15,8 @@ variable "allowed_branches" {
     PRs from other branches only need plan, which can use a separate,
     more restricted read-only role if you want stricter separation.
   EOT
-  type    = list(string)
-  default = ["main"]
+  type        = list(string)
+  default     = ["main"]
 }
 
 variable "allow_pull_requests" {
@@ -27,8 +27,8 @@ variable "allow_pull_requests" {
     source branch — scope the attached IAM policy tightly since PR-triggered
     runs are lower-trust (could come from a fork, depending on repo settings).
   EOT
-  type    = bool
-  default = true
+  type        = bool
+  default     = true
 }
 
 variable "role_name" {
@@ -45,8 +45,8 @@ variable "create_oidc_provider" {
     'token.actions.githubusercontent.com' as an OIDC provider in this
     account, set this to false and supply its ARN via existing_oidc_provider_arn.
   EOT
-  type    = bool
-  default = true
+  type        = bool
+  default     = true
 }
 
 variable "existing_oidc_provider_arn" {

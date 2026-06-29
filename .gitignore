@@ -7,7 +7,15 @@ terraform.tfvars
 tfplan.binary
 plan_output.txt
 lambda/*.zip
+
+# graphify
 graphify-out
 graphify-out/*
+
+# ignore claude
 .claude
 .claude/*
+
+# ignore kimchi
+.kimchi
+.kimchi/*

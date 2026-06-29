@@ -23,10 +23,10 @@ set -euo pipefail
 # Config — adjust these two if your sandbox/repo differs
 # ---------------------------------------------------------------------------
 AWS_PROFILE="${AWS_PROFILE:-default}"
-AWS_REGION="${AWS_REGION:-ap-southeast-2}"
+AWS_REGION="${AWS_REGION:-us-east-1}"
 NAME_PREFIX="golden-win2022"
-GITHUB_ORG="mrbalraj007"
-GITHUB_REPO="golden-image-windows"
+GITHUB_ORG="SinghWorld"
+GITHUB_REPO="b-aws-tf-gha-ec2-imagebuilder"
 
 export AWS_PROFILE
 export AWS_REGION
@@ -253,6 +253,98 @@ echo "=============================================================="
 echo " Apply complete. Key outputs:"
 echo "=============================================================="
 terraform output
+
+# ---------------------------------------------------------------------------
+# Step 7: Push secrets to the GitHub repo via gh CLI
+# ---------------------------------------------------------------------------
+# After the apply succeeds, every value the GitHub Actions workflows need
+# is now available either from terraform.tfvars (which we just generated)
+# or from terraform output. Push them all to the repo so CI can run.
+#
+# Falls back to manual instructions if gh is missing/unauthenticated, so
+# this block is safe to run in any environment.
+# ---------------------------------------------------------------------------
+echo ""
+echo "=============================================================="
+echo " Step 7: Push GitHub repo secrets"
+echo "=============================================================="
+
+GITHUB_ACTIONS_ROLE_ARN=$(terraform output -raw github_actions_role_arn 2>/dev/null || true)
+
+if [[ -z "$GITHUB_ACTIONS_ROLE_ARN" || "$GITHUB_ACTIONS_ROLE_ARN" == "null" ]]; then
+  echo "WARNING: could not read github_actions_role_arn from terraform output."
+  echo "AWS_OIDC_ROLE_ARN will be skipped."
+fi
+
+push_secrets_via_gh() {
+  if ! command -v gh &> /dev/null; then
+    echo "gh CLI not found on PATH — falling back to manual instructions."
+    echo "Install from https://cli.github.com/ and re-run, or set the"
+    echo "secrets manually as shown in the 'Next steps' section below."
+    return 1
+  fi
+
+  if ! gh auth status &> /dev/null; then
+    echo "gh CLI is installed but not authenticated — falling back to manual instructions."
+    echo "Run 'gh auth login' and re-run, or set the secrets manually."
+    return 1
+  fi
+
+  echo "Will set the following secrets on ${GITHUB_ORG}/${GITHUB_REPO}:"
+  echo "  AWS_OIDC_ROLE_ARN                  = ${GITHUB_ACTIONS_ROLE_ARN:-<skipped — not available>}"
+  echo "  GOLDEN_IMAGE_SUBNET_ID             = ${SUBNET_ID}"
+  echo "  GOLDEN_IMAGE_SG_IDS                = [\"${SECURITY_GROUP_ID}\"]"
+  echo "  GOLDEN_IMAGE_KMS_KEY_ARN           = ${KMS_KEY_ARN}"
+  echo "  GOLDEN_IMAGE_DISTRIBUTION_ACCOUNTS = []"
+  echo "  GOLDEN_IMAGE_SNS_TOPIC_ARN         = (empty string)"
+  echo ""
+  read -rp "Push these secrets to ${GITHUB_ORG}/${GITHUB_REPO} now? (yes/no): " CONFIRM_SECRETS
+
+  if [[ "$CONFIRM_SECRETS" != "yes" ]]; then
+    echo "Skipped. See the 'Next steps' section below for manual instructions."
+    return 1
+  fi
+
+  echo ""
+  echo "Pushing secrets..."
+
+  set_one_secret() {
+    local name="$1"
+    local value="$2"
+    if gh secret set "$name" --repo "${GITHUB_ORG}/${GITHUB_REPO}" --body "$value" &> /dev/null; then
+      echo "  ✓ set: $name"
+    else
+      echo "  ✗ FAILED: $name"
+      return 1
+    fi
+  }
+
+  local rc=0
+
+  if [[ -n "$GITHUB_ACTIONS_ROLE_ARN" && "$GITHUB_ACTIONS_ROLE_ARN" != "null" ]]; then
+    set_one_secret "AWS_OIDC_ROLE_ARN" "$GITHUB_ACTIONS_ROLE_ARN" || rc=1
+  else
+    echo "  - skipped (no value): AWS_OIDC_ROLE_ARN"
+  fi
+
+  set_one_secret "GOLDEN_IMAGE_SUBNET_ID"             "$SUBNET_ID" || rc=1
+  set_one_secret "GOLDEN_IMAGE_SG_IDS"                "[\"${SECURITY_GROUP_ID}\"]" || rc=1
+  set_one_secret "GOLDEN_IMAGE_KMS_KEY_ARN"           "$KMS_KEY_ARN" || rc=1
+  set_one_secret "GOLDEN_IMAGE_DISTRIBUTION_ACCOUNTS" "[]" || rc=1
+  set_one_secret "GOLDEN_IMAGE_SNS_TOPIC_ARN"         "" || rc=1
+
+  echo ""
+  if [[ $rc -eq 0 ]]; then
+    echo "All secrets pushed. Verify with:"
+    echo "  gh secret list --repo ${GITHUB_ORG}/${GITHUB_REPO}"
+  else
+    echo "One or more secrets failed to push. Re-run the script or set them manually."
+    echo "  See 'Next steps' below for the exact values."
+  fi
+  return $rc
+}
+
+push_secrets_via_gh || true   # never block the rest of the output on a secret-push failure
 
 echo ""
 echo "Next steps:"

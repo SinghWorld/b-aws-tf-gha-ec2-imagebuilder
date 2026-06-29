@@ -67,10 +67,10 @@ data "aws_iam_policy_document" "github_actions_trust" {
 }
 
 resource "aws_iam_role" "github_actions" {
-  name                  = var.role_name
-  assume_role_policy    = data.aws_iam_policy_document.github_actions_trust.json
-  max_session_duration  = 3600 # role is re-assumed per job step, not held for a whole long-running build
-  tags                  = var.tags
+  name                 = var.role_name
+  assume_role_policy   = data.aws_iam_policy_document.github_actions_trust.json
+  max_session_duration = 3600 # role is re-assumed per job step, not held for a whole long-running build
+  tags                 = var.tags
 }
 
 ## ---------------------------------------------------------------------------

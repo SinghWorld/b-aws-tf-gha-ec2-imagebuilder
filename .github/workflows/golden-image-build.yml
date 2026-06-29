@@ -30,7 +30,7 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION: ap-southeast-2
+  AWS_REGION: us-east-1
   TF_WORKING_DIR: golden-image-windows
   # How long to poll before giving up and failing the job (minutes)
   MAX_WAIT_MINUTES: 90

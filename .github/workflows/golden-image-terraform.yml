@@ -26,7 +26,7 @@ permissions:
 
 env:
   TF_WORKING_DIR: golden-image-windows
-  AWS_REGION: ap-southeast-2
+  AWS_REGION: us-east-1
 
 jobs:
   terraform-plan:
