@@ -65,6 +65,16 @@ locals {
   dispatch_branch_subs = [
     for b in var.allowed_dispatch_branches : "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/${b}"
   ]
+
+  # When a workflow job specifies `environment: <name>`, GitHub
+  # overrides the OIDC sub claim to:
+  #   repo:OWNER/REPO:environment:<name>
+  # regardless of the underlying event_name. None of the branch-ref
+  # sub patterns above will match this shape, so we need a dedicated
+  # list for environment-scoped jobs.
+  env_subs = [
+    for e in var.allowed_environments : "repo:${var.github_org}/${var.github_repo}:environment:${e}"
+  ]
 }
 
 ## ---------------------------------------------------------------------------
@@ -214,6 +224,43 @@ data "aws_iam_policy_document" "github_actions_trust" {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
       values   = local.dispatch_branch_subs
+    }
+  }
+
+  # --- Statement 5: GitHub Environments ---
+  # When a workflow job declares `environment: <name>`, GitHub overrides
+  # the OIDC sub claim to:
+  #   repo:OWNER/REPO:environment:<name>
+  # This is true regardless of the underlying event_name (push,
+  # pull_request, workflow_dispatch, etc.). None of the four branch-ref
+  # statements above match this shape, so jobs that use an environment
+  # (e.g. for approval gates or environment-scoped secrets) will fail
+  # with: Not authorized to perform sts:AssumeRoleWithWebIdentity.
+  #
+  # We deliberately do NOT gate on event_name here: the environment
+  # sub claim is the only distinguishing signal once a job runs under
+  # an environment. aud is still required as a baseline check.
+  statement {
+    sid    = "AllowFromConfiguredEnvironments"
+    effect = "Allow"
+
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [local.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = local.env_subs
     }
   }
 }

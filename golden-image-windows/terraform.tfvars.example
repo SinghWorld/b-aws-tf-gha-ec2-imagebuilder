@@ -65,6 +65,14 @@ allow_pull_requests  = true
 # trigger the workflow. Set explicitly here to lock down (e.g. ["main"]).
 # allowed_dispatch_branches = ["*"]
 
+# GitHub Environments used by jobs in this repo's workflows
+# (golden-image-terraform.yml and golden-image-build.yml both declare
+# `environment: golden-image-shared-services`). When a job runs under
+# an environment, GitHub overrides the OIDC sub claim to
+# repo:OWNER/REPO:environment:<name> — without an entry here, those
+# jobs will fail OIDC assume-role. Defaults to the value below.
+# allowed_environments = ["golden-image-shared-services"]
+
 role_name            = "golden-image-github-actions-role"
 
 # Set to false + populate existing_oidc_provider_arn if you already created
