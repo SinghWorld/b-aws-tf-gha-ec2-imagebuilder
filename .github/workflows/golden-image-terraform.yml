@@ -1,8 +1,15 @@
 name: Golden Image - Terraform Plan/Apply
 
 # Manages the Image Builder pipeline INFRASTRUCTURE (recipe, distribution,
-# infra config, IAM, Lambda). Does NOT trigger an actual image build —
+# infra config, IAM, Lambda, EventBridge) using remote state in S3 with
+# native .tflock-based locking. Does NOT trigger an actual image build —
 # see golden-image-build.yml for that.
+#
+# State backend:
+#   bucket : TF_STATE_BUCKET secret (created by bootstrap-sandbox.sh)
+#   region : TF_STATE_REGION secret
+#   key    : TF_STATE_KEY secret (defaults to golden-image-windows/terraform.tfstate)
+#   lock   : S3-native (.tflock via conditional writes) — no DynamoDB
 
 on:
   pull_request:
@@ -11,12 +18,14 @@ on:
       - "golden-image-windows/**.tf"
       - "golden-image-windows/lambda/**"
       - ".github/workflows/golden-image-terraform.yml"
+      - ".github/workflows/golden-image-terraform-destroy.yml"
   push:
     branches: [main]
     paths:
       - "golden-image-windows/**.tf"
       - "golden-image-windows/lambda/**"
       - ".github/workflows/golden-image-terraform.yml"
+      - ".github/workflows/golden-image-terraform-destroy.yml"
   workflow_dispatch: {}
 
 permissions:
@@ -27,6 +36,8 @@ permissions:
 env:
   TF_WORKING_DIR: golden-image-windows
   AWS_REGION: us-east-1
+  # 1.10+ is required for S3-native state locking (use_lockfile = true).
+  TF_VERSION: 1.11.0
 
 jobs:
   terraform-plan:
@@ -48,15 +59,40 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.9.8"
+          terraform_version: ${{ env.TF_VERSION }}
 
       - name: Build Lambda deployment package
         working-directory: ${{ env.TF_WORKING_DIR }}/lambda
         run: zip -j update_ssm_param.zip index.py
 
+      # Render backend.hcl from secrets so `terraform init
+      # -backend-config=backend.hcl` resolves the partial backend block in
+      # provider.tf. Anything not supplied as a secret is filled in with
+      # the same defaults the bootstrap script uses.
+      - name: Render backend.hcl from secrets
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ secrets.TF_STATE_REGION }}
+          TF_STATE_KEY:    ${{ secrets.TF_STATE_KEY }}
+        run: |
+          if [[ -z "$TF_STATE_BUCKET" || -z "$TF_STATE_REGION" ]]; then
+            echo "::error::TF_STATE_BUCKET and TF_STATE_REGION secrets are required."
+            echo "Bootstrap the sandbox first (see golden-image-windows/bootstrap-sandbox.sh)."
+            exit 1
+          fi
+          : "${TF_STATE_KEY:=golden-image-windows/terraform.tfstate}"
+          cat > backend.hcl <<EOF
+          bucket = "${TF_STATE_BUCKET}"
+          region = "${TF_STATE_REGION}"
+          key    = "${TF_STATE_KEY}"
+          EOF
+          echo "Wrote backend.hcl:"
+          cat backend.hcl
+
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init -input=false
+        run: terraform init -input=false -backend-config=backend.hcl
 
       - name: Terraform Validate
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -69,13 +105,20 @@ jobs:
 
       - name: Generate tfvars from secrets
         working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ secrets.TF_STATE_REGION }}
+          TF_STATE_KEY:    ${{ secrets.TF_STATE_KEY }}
         run: |
           cat > terraform.tfvars <<EOF
-          aws_region             = "${{ env.AWS_REGION }}"
+          aws_region              = "${{ env.AWS_REGION }}"
+          tf_state_bucket         = "${TF_STATE_BUCKET}"
+          tf_state_region         = "${TF_STATE_REGION}"
+          tf_state_key            = "${TF_STATE_KEY}"
           subnet_id               = "${{ secrets.GOLDEN_IMAGE_SUBNET_ID }}"
-          security_group_ids     = ${{ secrets.GOLDEN_IMAGE_SG_IDS }}
+          security_group_ids      = ${{ secrets.GOLDEN_IMAGE_SG_IDS }}
           kms_key_id              = "${{ secrets.GOLDEN_IMAGE_KMS_KEY_ARN }}"
-          distribution_accounts  = ${{ secrets.GOLDEN_IMAGE_DISTRIBUTION_ACCOUNTS }}
+          distribution_accounts   = ${{ secrets.GOLDEN_IMAGE_DISTRIBUTION_ACCOUNTS }}
           sns_topic_arn           = "${{ secrets.GOLDEN_IMAGE_SNS_TOPIC_ARN }}"
           EOF
 
@@ -85,6 +128,7 @@ jobs:
         run: |
           set +e
           terraform plan -input=false -no-color -out=tfplan.binary \
+            -var-file=terraform.tfvars \
             > plan_output.txt
           echo "exitcode=$?" >> "$GITHUB_OUTPUT"
           set -e
@@ -131,15 +175,33 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.9.8"
+          terraform_version: ${{ env.TF_VERSION }}
 
       - name: Build Lambda deployment package
         working-directory: ${{ env.TF_WORKING_DIR }}/lambda
         run: zip -j update_ssm_param.zip index.py
 
+      - name: Render backend.hcl from secrets
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ secrets.TF_STATE_REGION }}
+          TF_STATE_KEY:    ${{ secrets.TF_STATE_KEY }}
+        run: |
+          if [[ -z "$TF_STATE_BUCKET" || -z "$TF_STATE_REGION" ]]; then
+            echo "::error::TF_STATE_BUCKET and TF_STATE_REGION secrets are required."
+            exit 1
+          fi
+          : "${TF_STATE_KEY:=golden-image-windows/terraform.tfstate}"
+          cat > backend.hcl <<EOF
+          bucket = "${TF_STATE_BUCKET}"
+          region = "${TF_STATE_REGION}"
+          key    = "${TF_STATE_KEY}"
+          EOF
+
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init -input=false
+        run: terraform init -input=false -backend-config=backend.hcl
 
       - name: Download plan artifact
         uses: actions/download-artifact@v4

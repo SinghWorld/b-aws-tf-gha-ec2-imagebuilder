@@ -1,0 +1,236 @@
+name: Golden Image - Terraform Destroy
+
+# Destroys EVERY resource created by golden-image-terraform.yml
+# (Image Builder pipeline + recipe + components, IAM roles, Lambda,
+# EventBridge rule, SNS topic, S3 logging bucket, SSM parameter,
+# GitHub OIDC provider).
+#
+# Safety:
+#   - workflow_dispatch ONLY (no push/PR triggers of any kind)
+#   - Two jobs: plan-destroy (always runs) and apply-destroy (gated)
+#   - apply-destroy requires BOTH:
+#       (a) the literal input string "destroy" in confirm_destroy
+#       (b) GitHub Environment approval on `golden-image-shared-services`
+#   - Uses the SAME S3 backend and OIDC role as apply, so state lock and
+#     audit trail match.
+#
+# IMPORTANT: this destroys the GitHub OIDC provider itself, which means
+# after a successful run the apply workflow can no longer assume the
+# role. Re-bootstrap with bootstrap-sandbox.sh to recover.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_destroy:
+        description: 'Type the literal word "destroy" to enable the apply step'
+        required: true
+        type: string
+      reason:
+        description: "Why are you destroying? (recorded in run summary for audit)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_WORKING_DIR: golden-image-windows
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.11.0 # same as apply workflow — must match the state backend's lock file format
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # JOB 1 — generate the destroy plan, upload it as an artifact, surface it
+  # in the run summary so the human approver can review BEFORE approving the
+  # environment gate.
+  # ---------------------------------------------------------------------------
+  plan-destroy:
+    name: Plan Destroy
+    runs-on: ubuntu-latest
+    environment: golden-image-shared-services # still gated, so an unauthorised user cannot even SEE the destroy plan without approval
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Build Lambda deployment package
+        working-directory: ${{ env.TF_WORKING_DIR }}/lambda
+        run: zip -j update_ssm_param.zip index.py
+
+      - name: Render backend.hcl from secrets
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ secrets.TF_STATE_REGION }}
+          TF_STATE_KEY:    ${{ secrets.TF_STATE_KEY }}
+        run: |
+          if [[ -z "$TF_STATE_BUCKET" || -z "$TF_STATE_REGION" ]]; then
+            echo "::error::TF_STATE_BUCKET and TF_STATE_REGION secrets are required."
+            exit 1
+          fi
+          : "${TF_STATE_KEY:=golden-image-windows/terraform.tfstate}"
+          cat > backend.hcl <<EOF
+          bucket = "${TF_STATE_BUCKET}"
+          region = "${TF_STATE_REGION}"
+          key    = "${TF_STATE_KEY}"
+          EOF
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false -backend-config=backend.hcl
+
+      - name: Generate tfvars from secrets
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ secrets.TF_STATE_REGION }}
+          TF_STATE_KEY:    ${{ secrets.TF_STATE_KEY }}
+        run: |
+          cat > terraform.tfvars <<EOF
+          aws_region              = "${{ env.AWS_REGION }}"
+          tf_state_bucket         = "${TF_STATE_BUCKET}"
+          tf_state_region         = "${TF_STATE_REGION}"
+          tf_state_key            = "${TF_STATE_KEY}"
+          subnet_id               = "${{ secrets.GOLDEN_IMAGE_SUBNET_ID }}"
+          security_group_ids      = ${{ secrets.GOLDEN_IMAGE_SG_IDS }}
+          kms_key_id              = "${{ secrets.GOLDEN_IMAGE_KMS_KEY_ARN }}"
+          distribution_accounts   = ${{ secrets.GOLDEN_IMAGE_DISTRIBUTION_ACCOUNTS }}
+          sns_topic_arn           = "${{ secrets.GOLDEN_IMAGE_SNS_TOPIC_ARN }}"
+          EOF
+
+      - name: Generate destroy plan
+        id: plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          set +e
+          terraform plan -destroy -input=false -no-color -out=tfplan.destroy \
+            -var-file=terraform.tfvars \
+            > plan_destroy_output.txt 2>&1
+          RC=$?
+          echo "exitcode=$RC" >> "$GITHUB_OUTPUT"
+          set -e
+          if [[ $RC -ne 0 && $RC -ne 2 ]]; then
+            # exit code 2 = plan succeeded with non-empty diff (i.e. there IS something to destroy)
+            # any other non-zero = real error
+            echo "::error::terraform plan -destroy failed with exit code $RC"
+            cat plan_destroy_output.txt
+            exit $RC
+          fi
+
+      - name: Surface plan in run summary
+        if: always()
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          {
+            echo "### ⚠️ Terraform DESTROY plan"
+            echo ""
+            echo "**Reason given:** ${{ github.event.inputs.reason || '(none)' }}"
+            echo ""
+            echo '```hcl'
+            cat plan_destroy_output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload destroy plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-destroy
+          path: |
+            ${{ env.TF_WORKING_DIR }}/tfplan.destroy
+            ${{ env.TF_WORKING_DIR }}/plan_destroy_output.txt
+          retention-days: 30 # keep destroy plans around longer than apply plans for audit
+
+  # ---------------------------------------------------------------------------
+  # JOB 2 — apply the destroy plan. Two independent gates must both pass:
+  #   (1) the workflow_dispatch input `confirm_destroy` equals the literal
+  #       string "destroy" — typo guard
+  #   (2) the GitHub Environment `golden-image-shared-services` has approved
+  #       the run via required reviewers
+  # ---------------------------------------------------------------------------
+  apply-destroy:
+    name: Apply Destroy
+    needs: plan-destroy
+    runs-on: ubuntu-latest
+    environment: golden-image-shared-services
+    steps:
+      - name: Verify confirmation phrase
+        if: github.event.inputs.confirm_destroy != 'destroy'
+        run: |
+          echo "::error::confirm_destroy input must equal the literal string 'destroy' (you typed: '${{ github.event.inputs.confirm_destroy }}')."
+          echo "Re-run the workflow with confirm_destroy set to 'destroy' to proceed."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Build Lambda deployment package
+        working-directory: ${{ env.TF_WORKING_DIR }}/lambda
+        run: zip -j update_ssm_param.zip index.py
+
+      - name: Render backend.hcl from secrets
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ secrets.TF_STATE_REGION }}
+          TF_STATE_KEY:    ${{ secrets.TF_STATE_KEY }}
+        run: |
+          if [[ -z "$TF_STATE_BUCKET" || -z "$TF_STATE_REGION" ]]; then
+            echo "::error::TF_STATE_BUCKET and TF_STATE_REGION secrets are required."
+            exit 1
+          fi
+          : "${TF_STATE_KEY:=golden-image-windows/terraform.tfstate}"
+          cat > backend.hcl <<EOF
+          bucket = "${TF_STATE_BUCKET}"
+          region = "${TF_STATE_REGION}"
+          key    = "${TF_STATE_KEY}"
+          EOF
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false -backend-config=backend.hcl
+
+      - name: Download destroy plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-destroy
+          path: ${{ env.TF_WORKING_DIR }}
+
+      - name: Terraform Apply (destroy)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          echo "### 🔥 DESTROYING infrastructure" >> "$GITHUB_STEP_SUMMARY"
+          echo "Reason: ${{ github.event.inputs.reason || '(none)' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          terraform apply -input=false -auto-approve tfplan.destroy
+
+      - name: Post-destroy warning
+        if: always()
+        run: |
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### ℹ️ After a successful destroy:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- The S3 state bucket itself is INTENTIONALLY LEFT IN PLACE (state recovery)." >> "$GITHUB_STEP_SUMMARY"
+          echo "- The OIDC role this workflow just used no longer exists; subsequent apply runs will fail until you re-bootstrap with \`bootstrap-sandbox.sh\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "- The KMS key for AMI encryption (separate from this Terraform config) must be deleted manually with \`destroybootstrap-sandbox.sh\`." >> "$GITHUB_STEP_SUMMARY"
