@@ -57,6 +57,14 @@ locals {
   pr_fork_subs = var.allow_pull_requests ? [
     "repo:${var.github_org}/${var.github_repo}:pull_request"
   ] : []
+
+  # workflow_dispatch events share the push sub shape
+  # (repo:OWNER/REPO:ref:refs/heads/<branch>), so we build the same kind
+  # of StringLike list — wildcards in allowed_dispatch_branches work
+  # the same way as in allowed_pr_branches.
+  dispatch_branch_subs = [
+    for b in var.allowed_dispatch_branches : "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/${b}"
+  ]
 }
 
 ## ---------------------------------------------------------------------------
@@ -169,6 +177,43 @@ data "aws_iam_policy_document" "github_actions_trust" {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
       values   = local.pr_fork_subs
+    }
+  }
+
+  # --- Statement 4: workflow_dispatch events (manual "Run workflow") ---
+  # Without this statement, manually triggering the workflow from a
+  # feature branch via the Actions UI fails with:
+  #   Not authorized to perform sts:AssumeRoleWithWebIdentity
+  # because no statement matches event_name=workflow_dispatch. The sub
+  # claim is the same shape as push, so we StringLike against
+  # allowed_dispatch_branches (default ["*"] so any branch works).
+  statement {
+    sid    = "AllowWorkflowDispatchFromAllowedBranches"
+    effect = "Allow"
+
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [local.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:event_name"
+      values   = ["workflow_dispatch"]
+    }
+
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = local.dispatch_branch_subs
     }
   }
 }

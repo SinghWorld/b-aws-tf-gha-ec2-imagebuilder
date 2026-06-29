@@ -45,6 +45,29 @@ variable "allowed_pr_branches" {
   default     = ["*"]
 }
 
+variable "allowed_dispatch_branches" {
+  description = <<-EOT
+    Branches allowed to assume this role via OIDC for `workflow_dispatch`
+    events (i.e. workflow runs triggered manually from the Actions UI).
+    Defaults to ["*"] so manual triggers work from any branch — without
+    this, triggering the workflow from a feature branch via the "Run
+    workflow" button produces the error:
+        Not authorized to perform sts:AssumeRoleWithWebIdentity
+    because the trust policy has no statement for event_name=workflow_dispatch.
+
+    The sub claim for workflow_dispatch is the same shape as push:
+      repo:OWNER/REPO:ref:refs/heads/<branch>
+    so this list is matched with StringLike (wildcards supported).
+
+    Note that anyone with `workflow` write permission on the repo can
+    trigger workflow_dispatch, so this is equivalent in trust to a PR
+    plan run. Tighten to e.g. ["main"] if your security posture
+    requires manual triggers to be restricted to a specific branch.
+  EOT
+  type        = list(string)
+  default     = ["*"]
+}
+
 variable "allow_pull_requests" {
   description = <<-EOT
     Whether to also trust the 'pull_request' GitHub Actions event (needed

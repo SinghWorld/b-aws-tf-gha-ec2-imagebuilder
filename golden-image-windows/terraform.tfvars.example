@@ -59,6 +59,12 @@ allowed_branches     = ["main"]
 # allowed_pr_branches  = ["*"]
 
 allow_pull_requests  = true
+
+# workflow_dispatch events (manual "Run workflow" from the Actions UI).
+# Defaults to ["*"] via the variable default — any branch can manually
+# trigger the workflow. Set explicitly here to lock down (e.g. ["main"]).
+# allowed_dispatch_branches = ["*"]
+
 role_name            = "golden-image-github-actions-role"
 
 # Set to false + populate existing_oidc_provider_arn if you already created
