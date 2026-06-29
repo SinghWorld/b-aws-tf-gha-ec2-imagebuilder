@@ -7,17 +7,17 @@ variable "name_prefix" {
 variable "aws_region" {
   description = "Primary region where the pipeline runs and the base AMI is built"
   type        = string
-  default     = "us-east-1"
+  default     = "ap-southeast-2"
 }
 
 variable "base_image_arn" {
   description = <<-EOT
     SSM alias ARN for the base AMI. Using the SSM alias (not a static AMI ID)
     means Image Builder always starts from the latest patched AWS-managed base.
-    Example: arn:aws:imagebuilder:us-east-1:aws:image/windows-server-2022-english-full-base-x86/x.x.x
+    Example: arn:aws:imagebuilder:ap-southeast-2:aws:image/windows-server-2022-english-full-base-x86/x.x.x
   EOT
   type        = string
-  default     = "arn:aws:imagebuilder:us-east-1:aws:image/windows-server-2022-english-full-base-x86/x.x.x"
+  default     = "arn:aws:imagebuilder:ap-southeast-2:aws:image/windows-server-2022-english-full-base-x86/x.x.x"
 }
 
 variable "instance_types" {

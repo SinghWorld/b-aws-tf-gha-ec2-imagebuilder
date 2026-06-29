@@ -1,15 +1,15 @@
 # Copy to terraform.tfvars and fill in your actual values.
 
-aws_region   = "us-east-1"
+aws_region   = "ap-southeast-2"
 name_prefix  = "golden-win2022"
 
 # Use the SSM alias ARN, not a static AMI ID — always pulls latest AWS patch baseline
-base_image_arn = "arn:aws:imagebuilder:us-east-1:aws:image/windows-server-2022-english-full-base-x86/x.x.x"
+base_image_arn = "arn:aws:imagebuilder:ap-southeast-2:aws:image/windows-server-2022-english-full-base-x86/x.x.x"
 
 subnet_id           = "subnet-0123456789abcdef0"   # private subnet w/ SSM VPC endpoints or NAT egress
 security_group_ids  = ["sg-0123456789abcdef0"]
 
-kms_key_id = "arn:aws:kms:us-east-1:111111111111:key/your-key-id"
+kms_key_id = "arn:aws:kms:ap-southeast-2:111111111111:key/your-key-id"
 
 # Spoke accounts in your landing zone that should receive the AMI
 distribution_accounts = [
@@ -25,7 +25,7 @@ distribution_regions = {
   }
 }
 
-sns_topic_arn = "arn:aws:sns:us-east-1:111111111111:golden-image-notifications"
+sns_topic_arn = "arn:aws:sns:ap-southeast-2:111111111111:golden-image-notifications"
 
 tags = {
   Environment = "shared-services"
@@ -35,7 +35,7 @@ tags = {
 }
 
 # --- GitHub OIDC ---
-github_org           = "SinghWorld"
+github_org           = "mrbalraj007"
 github_repo          = "golden-image-windows"   # adjust to your actual repo name
 allowed_branches     = ["main"]
 allow_pull_requests  = true
