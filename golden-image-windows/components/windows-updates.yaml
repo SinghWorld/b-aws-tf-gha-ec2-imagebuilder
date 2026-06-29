@@ -1,0 +1,46 @@
+name: WindowsUpdates
+description: Installs all available Windows Updates at build time so the AMI is never built from a stale patch baseline.
+schemaVersion: 1.0
+
+phases:
+  - name: build
+    steps:
+      - name: InstallWindowsUpdates
+        action: ExecutePowerShell
+        inputs:
+          commands:
+            - |
+              Write-Host "Installing PSWindowsUpdate module..."
+              Install-PackageProvider -Name NuGet -Force
+              Install-Module PSWindowsUpdate -Force -Confirm:$false
+              Import-Module PSWindowsUpdate
+
+              Write-Host "Scanning for updates..."
+              $updates = Get-WindowsUpdate
+
+              if ($updates.Count -gt 0) {
+                Write-Host "Installing $($updates.Count) update(s)..."
+                Install-WindowsUpdate -AcceptAll -IgnoreReboot -Confirm:$false
+              } else {
+                Write-Host "No updates pending."
+              }
+
+      - name: RebootAfterUpdates
+        action: Reboot
+        inputs:
+          delaySeconds: 30
+
+  - name: validate
+    steps:
+      - name: ConfirmNoPendingUpdates
+        action: ExecutePowerShell
+        inputs:
+          commands:
+            - |
+              Import-Module PSWindowsUpdate
+              $pending = Get-WindowsUpdate
+              if ($pending.Count -gt 0) {
+                Write-Host "WARNING: $($pending.Count) update(s) still pending after install/reboot cycle."
+                exit 1
+              }
+              Write-Host "No pending updates. Patch baseline confirmed current."

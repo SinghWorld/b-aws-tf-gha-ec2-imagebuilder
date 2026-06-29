@@ -1,0 +1,75 @@
+name: ValidationTest
+description: Runs a Pester test suite against the built image to confirm hardening, agents, and baseline expectations before the AMI is marked AVAILABLE.
+schemaVersion: 1.0
+
+phases:
+  - name: test
+    steps:
+      - name: InstallPester
+        action: ExecutePowerShell
+        inputs:
+          commands:
+            - |
+              Install-Module -Name Pester -Force -SkipPublisherCheck -MinimumVersion 5.0.0
+
+      - name: WritePesterTests
+        action: ExecutePowerShell
+        inputs:
+          commands:
+            - |
+              $testContent = @'
+              Describe "Golden Image Validation" {
+
+                  Context "Required Services" {
+                      It "SSM Agent service exists and is running" {
+                          (Get-Service AmazonSSMAgent).Status | Should -Be "Running"
+                      }
+                      It "CloudWatch Agent service exists" {
+                          Get-Service AmazonCloudWatchAgent -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+                      }
+                  }
+
+                  Context "Hardening Baseline" {
+                      It "Guest account is disabled" {
+                          (Get-LocalUser -Name "Guest").Enabled | Should -Be $false
+                      }
+                      It "SMBv1 is disabled" {
+                          (Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol).State | Should -Be "Disabled"
+                      }
+                      It "Windows Firewall is enabled on all profiles" {
+                          $profiles = Get-NetFirewallProfile
+                          foreach ($p in $profiles) {
+                              $p.Enabled | Should -Be $true
+                          }
+                      }
+                      It "WDigest credential caching is disabled" {
+                          $val = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest" -Name "UseLogonCredential" -ErrorAction SilentlyContinue
+                          $val.UseLogonCredential | Should -Be 0
+                      }
+                  }
+
+                  Context "Patch Baseline" {
+                      It "No pending reboot flag set" {
+                          $pendingReboot = Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"
+                          $pendingReboot | Should -Be $false
+                      }
+                  }
+              }
+              '@
+              Set-Content -Path "C:\golden-image-tests.ps1" -Value $testContent
+
+      - name: RunPesterTests
+        action: ExecutePowerShell
+        inputs:
+          commands:
+            - |
+              $result = Invoke-Pester -Path "C:\golden-image-tests.ps1" -PassThru
+
+              Write-Host "Tests: $($result.PassedCount) passed, $($result.FailedCount) failed"
+
+              if ($result.FailedCount -gt 0) {
+                Write-Host "VALIDATION FAILED — blocking image promotion."
+                exit 1
+              }
+
+              Write-Host "All validation tests passed."

@@ -1,0 +1,9 @@
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+*.tfplan
+tfplan.binary
+plan_output.txt
+lambda/*.zip

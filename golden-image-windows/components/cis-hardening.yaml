@@ -1,0 +1,47 @@
+name: CISHardening
+description: Applies a CIS Benchmark-aligned hardening baseline for Windows Server. Extend this with your org's specific STIG/CIS control set.
+schemaVersion: 1.0
+
+phases:
+  - name: build
+    steps:
+      - name: ApplyCISBaseline
+        action: ExecutePowerShell
+        inputs:
+          commands:
+            - |
+              Write-Host "Applying CIS hardening baseline..."
+
+              # --- Account/Password policy (CIS 1.x) ---
+              net accounts /minpwlen:14
+              net accounts /maxpwage:60
+              net accounts /lockoutthreshold:5
+              net accounts /lockoutduration:15
+              net accounts /lockoutwindow:15
+
+              # --- Disable SMBv1 (CIS 18.3.x) ---
+              Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart
+
+              # --- Disable Guest account (CIS 2.3.1.x) ---
+              net user Guest /active:no
+
+              # --- Enable Windows Firewall on all profiles (CIS 9.x) ---
+              Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True
+
+              # --- Disable LLMNR (CIS 18.x — common lateral movement vector) ---
+              New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" -Force | Out-Null
+              Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" -Name "EnableMulticast" -Value 0
+
+              # --- Disable WDigest credential caching (CIS 18.x) ---
+              Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest" -Name "UseLogonCredential" -Value 0 -Type DWord
+
+              # --- Enable audit logging for logon events (CIS 17.x) ---
+              auditpol /set /category:"Logon/Logoff" /success:enable /failure:enable
+              auditpol /set /category:"Account Management" /success:enable /failure:enable
+
+              Write-Host "CIS baseline applied."
+
+              # NOTE: For full enterprise compliance, replace/extend this block with:
+              #   - Microsoft's official CIS Benchmark GPO baseline (via LGPO.exe import), or
+              #   - DSC configuration referencing your org's compliance-as-code repo
+              # This inline block covers the highest-impact controls only.

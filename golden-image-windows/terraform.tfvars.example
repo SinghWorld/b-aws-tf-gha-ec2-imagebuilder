@@ -1,0 +1,48 @@
+# Copy to terraform.tfvars and fill in your actual values.
+
+aws_region   = "us-east-1"
+name_prefix  = "golden-win2022"
+
+# Use the SSM alias ARN, not a static AMI ID — always pulls latest AWS patch baseline
+base_image_arn = "arn:aws:imagebuilder:us-east-1:aws:image/windows-server-2022-english-full-base-x86/x.x.x"
+
+subnet_id           = "subnet-0123456789abcdef0"   # private subnet w/ SSM VPC endpoints or NAT egress
+security_group_ids  = ["sg-0123456789abcdef0"]
+
+kms_key_id = "arn:aws:kms:us-east-1:111111111111:key/your-key-id"
+
+# Spoke accounts in your landing zone that should receive the AMI
+distribution_accounts = [
+  "222222222222", # e.g. shared-services
+  "333333333333", # e.g. workloads-prod
+]
+
+# Optional: distribute to additional regions too
+distribution_regions = {
+  "ap-southeast-4" = {
+    target_account_ids = ["222222222222", "333333333333"]
+    ami_name            = "golden-win2022-syd-{{ imagebuilder:buildDate }}"
+  }
+}
+
+sns_topic_arn = "arn:aws:sns:us-east-1:111111111111:golden-image-notifications"
+
+tags = {
+  Environment = "shared-services"
+  ManagedBy   = "terraform"
+  Project     = "golden-image-lab"
+  Owner       = "balraj"
+}
+
+# --- GitHub OIDC ---
+github_org           = "mrbalraj007"
+github_repo          = "golden-image-windows"   # adjust to your actual repo name
+allowed_branches     = ["main"]
+allow_pull_requests  = true
+role_name            = "golden-image-github-actions-role"
+
+# Set to false + populate existing_oidc_provider_arn if you already created
+# the token.actions.githubusercontent.com OIDC provider for another pipeline
+# (e.g. Terraform-Drift-Detection) — AWS allows only ONE per account.
+create_oidc_provider       = true
+existing_oidc_provider_arn = ""
