@@ -1,0 +1,31 @@
+<!-- ================================================================== -->                                                                                                                         
+           <!-- Sub-zone 2.7: Observability &amp; Monitoring  (NEW)                  -->                                                                                                                       
+           <!-- ================================================================== -->                                                                                                                         
+           <mxCell id="obs_zone" value="2.7  Observability &amp; Monitoring"                                                                                                                                   
+                                                                                                                                                                                                               
+ style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E0F7FA;strokeColor=#00695C;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=3;fontSize=12;fontStyle=1;fontColor=#00695C;"     
+                   vertex="1" parent="1">                                                                                                                                                                      
+             <mxGeometry x="60" y="1185" width="760" height="540" as="geometry" />                                                                                                                             
+           </mxCell>                                                                                                                                                                                           
+           <!-- (CW Logs, CW Metrics, CW Dashboard, CW Alarms, CloudTrail, X-Ray boxes — ~120 lines) -->                                                                                                       
+                                                                                                                                                                                                               
+           <!-- ================================================================== -->                                                                                                                         
+           <!-- Sub-zone 2.8: Security &amp; Compliance  (NEW)                        -->                                                                                                                      
+           <!-- ================================================================== -->                                                                                                                         
+           <mxCell id="sec_zone" value="2.8  Security &amp; Compliance"                                                                                                                                        
+                                                                                                                                                                                                               
+ style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFEBEE;strokeColor=#C62828;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=3;fontSize=12;fontStyle=1;fontColor=#C62828;"     
+                   vertex="1" parent="1">                                                                                                                                                                      
+             <mxGeometry x="840" y="1185" width="520" height="540" as="geometry" />                                                                                                                            
+           </mxCell>                                                                                                                                                                                           
+           <!-- (AWS Config, IAM Access Analyzer, Security Hub boxes — ~70 lines) -->                                                                                                                          
+                                                                                                                                                                                                               
+           <!-- ================================================================== -->                                                                                                                         
+           <!-- Sub-zone 2.9: Cross-Account KMS Decrypt Flow  (NEW)                 -->                                                                                                                        
+           <!-- ================================================================== -->                                                                                                                         
+           <mxCell id="kms_flow_zone" value="2.9  Cross-Account KMS Decrypt Flow  (addresses README Known Gap)"                                                                                                
+                                                                                                                                                                                                               
+ style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#B8860B;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=3;fontSize=12;fontStyle=1;fontColor=#B8860B;"     
+                   vertex="1" parent="1">                                                                                                                                                                      
+             <mxGeometry x="1380" y="1185" width="960" height="540" as="geometry" />                                                                                                                           
+           </mxCell> 
