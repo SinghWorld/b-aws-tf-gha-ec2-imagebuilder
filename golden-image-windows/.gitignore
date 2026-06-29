@@ -7,3 +7,7 @@ terraform.tfvars
 tfplan.binary
 plan_output.txt
 lambda/*.zip
+graphify-out
+graphify-out/*
+.claude
+.claude/*

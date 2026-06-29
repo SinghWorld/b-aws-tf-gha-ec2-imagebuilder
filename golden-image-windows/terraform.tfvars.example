@@ -35,7 +35,7 @@ tags = {
 }
 
 # --- GitHub OIDC ---
-github_org           = "mrbalraj007"
+github_org           = "SinghWorld"
 github_repo          = "golden-image-windows"   # adjust to your actual repo name
 allowed_branches     = ["main"]
 allow_pull_requests  = true
