@@ -110,6 +110,16 @@ jobs:
           TF_STATE_REGION: ${{ secrets.TF_STATE_REGION }}
           TF_STATE_KEY:    ${{ secrets.TF_STATE_KEY }}
         run: |
+          # Derive github_org / github_repo from the workflow context so the
+          # generated tfvars always matches the repo running this workflow —
+          # both variables are required by oidc-variables.tf with no default,
+          # and omitting them makes `terraform plan` exit 1 with
+          # "No value for required variable". Previously these were only set
+          # by bootstrap-sandbox.sh locally, never propagated to CI, so every
+          # CI run failed at plan time.
+          REPO_FULL="${{ github.repository }}"
+          REPO_OWNER="${REPO_FULL%/*}"
+          REPO_NAME="${REPO_FULL#*/}"
           cat > terraform.tfvars <<EOF
           aws_region              = "${{ env.AWS_REGION }}"
           tf_state_bucket         = "${TF_STATE_BUCKET}"
@@ -120,18 +130,40 @@ jobs:
           kms_key_id              = "${{ secrets.GOLDEN_IMAGE_KMS_KEY_ARN }}"
           distribution_accounts   = ${{ secrets.GOLDEN_IMAGE_DISTRIBUTION_ACCOUNTS }}
           sns_topic_arn           = "${{ secrets.GOLDEN_IMAGE_SNS_TOPIC_ARN }}"
+          github_org              = "${REPO_OWNER}"
+          github_repo             = "${REPO_NAME}"
           EOF
 
       - name: Terraform Plan
         id: plan
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
+          # terraform plan exit codes:
+          #   0 = no changes (infrastructure matches config)
+          #   1 = real error (refused to plan — bad config, missing vars, etc.)
+          #   2 = plan shows changes (expected; apply will pick them up)
+          # We want the step to fail ONLY on real errors (exit 1). Exit 2 is
+          # the normal "there's something to apply" signal and must succeed so
+          # the upload step can ship the plan binary to the apply job.
+          #
+          # The previous `set +e ... set -e` pattern masked all failures: the
+          # last `set -e` always succeeded, so the step exited 0 even when
+          # terraform plan failed. Combined with the upload step's default
+          # `if-no-files-found: warn`, a failed plan silently produced an empty
+          # artifact, the apply job ran anyway, and download-artifact errored
+          # with "Artifact not found".
           set +e
           terraform plan -input=false -no-color -out=tfplan.binary \
             -var-file=terraform.tfvars \
             > plan_output.txt
-          echo "exitcode=$?" >> "$GITHUB_OUTPUT"
+          PLAN_EXIT=$?
           set -e
+          echo "exitcode=$PLAN_EXIT" >> "$GITHUB_OUTPUT"
+          if [[ $PLAN_EXIT -eq 1 ]]; then
+            echo "::error::terraform plan failed with exit code $PLAN_EXIT"
+            cat plan_output.txt
+            exit 1
+          fi
 
       - name: Post Plan to PR
         if: github.event_name == 'pull_request'
@@ -155,6 +187,12 @@ jobs:
           name: tfplan
           path: ${{ env.TF_WORKING_DIR }}/tfplan.binary
           retention-days: 5
+          # Fail the step (and therefore the plan job) if tfplan.binary is
+          # missing — e.g. because the plan step above errored out and never
+          # wrote the file. Default is `warn`, which silently uploads nothing
+          # and lets the apply job run, only to fail at download-artifact
+          # with a confusing "Artifact not found" error.
+          if-no-files-found: error
 
   terraform-apply:
     name: Terraform Apply
