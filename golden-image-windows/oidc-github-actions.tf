@@ -499,6 +499,7 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "lambda:UpdateFunctionCode",
       "lambda:UpdateFunctionConfiguration",
       "lambda:GetFunction",
+      "lambda:ListVersionsByFunction",
       "lambda:DeleteFunction",
       "lambda:AddPermission",
       "lambda:RemovePermission",
