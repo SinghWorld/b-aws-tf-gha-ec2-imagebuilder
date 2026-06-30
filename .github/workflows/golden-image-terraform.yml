@@ -78,7 +78,7 @@ jobs:
         run: |
           if [[ -z "$TF_STATE_BUCKET" || -z "$TF_STATE_REGION" ]]; then
             echo "::error::TF_STATE_BUCKET and TF_STATE_REGION secrets are required."
-            echo "Bootstrap the sandbox first (see golden-image-windows/bootstrap-sandbox.sh)."
+            echo "Bootstrap the sandbox first (see golden-image-windows/scripts/bootstrap-sandbox.sh)."
             exit 1
           fi
           : "${TF_STATE_KEY:=golden-image-windows/terraform.tfstate}"

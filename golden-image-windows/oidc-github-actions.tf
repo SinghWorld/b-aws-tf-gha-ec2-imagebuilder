@@ -58,6 +58,15 @@ locals {
     "repo:${var.github_org}/${var.github_repo}:pull_request"
   ] : []
 
+  # Combined sub patterns used by the merged pull_request statement below:
+  #   pr_branch_subs  — same-repo branches with `:ref:refs/heads/<branch>` shape
+  #   pr_fork_subs    — literal `:pull_request` suffix for PRs from forks
+  # StringLike subsumes StringEquals for literal patterns (no wildcards), so
+  # a single StringLike against the union of both lists matches both shapes
+  # identically — and keeps the rendered trust policy under the AWS 2048-char
+  # quota (see Statement 2 below).
+  pr_subs = concat(local.pr_branch_subs, local.pr_fork_subs)
+
   # workflow_dispatch events share the push sub shape
   # (repo:OWNER/REPO:ref:refs/heads/<branch>), so we build the same kind
   # of StringLike list — wildcards in allowed_dispatch_branches work
@@ -128,9 +137,16 @@ data "aws_iam_policy_document" "github_actions_trust" {
     }
   }
 
-  # --- Statement 2: pull_request events → allowed_pr_branches (default any) ---
+  # --- Statement 2: pull_request events (same-repo branches OR forks) ---
+  # Merged from the prior separate same-repo-branches and fork statements
+  # to fit the AWS 2048-char trust-policy size quota (LimitExceeded:
+  # ACLSizePerRole: 2048). Both events share event_name=pull_request and
+  # differ only in the sub-claim suffix (`:ref:refs/heads/<branch>` vs
+  # literal `:pull_request`); a single StringLike against the union of
+  # both pattern lists (local.pr_subs) matches both shapes identically
+  # because StringLike subsumes StringEquals for literal patterns.
   statement {
-    sid    = "AllowPullRequestFromSameRepoBranches"
+    sid    = "AllowPullRequest"
     effect = "Allow"
 
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -155,38 +171,7 @@ data "aws_iam_policy_document" "github_actions_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = local.pr_branch_subs
-    }
-  }
-
-  # --- Statement 3: pull_request events from forks (literal :pull_request) ---
-  statement {
-    sid    = "AllowPullRequestFromFork"
-    effect = "Allow"
-
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-
-    principals {
-      type        = "Federated"
-      identifiers = [local.oidc_provider_arn]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:aud"
-      values   = ["sts.amazonaws.com"]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:event_name"
-      values   = ["pull_request"]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:sub"
-      values   = local.pr_fork_subs
+      values   = local.pr_subs
     }
   }
 
