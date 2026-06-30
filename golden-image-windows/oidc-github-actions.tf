@@ -357,11 +357,6 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "iam:GetInstanceProfile",
       "iam:TagRole",
       "iam:TagInstanceProfile",
-      # Read APIs needed by `terraform refresh` to read the OIDC provider's
-      # current state. Without these the plan step fails with
-      # AccessDenied on iam:GetOpenIDConnectProvider before any diff is shown.
-      "iam:GetOpenIDConnectProvider",
-      "iam:ListOpenIDConnectProviders",
       "iam:GetPolicy",
       "iam:GetPolicyVersion",
     ]
@@ -370,6 +365,19 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "arn:aws:iam::*:instance-profile/${var.name_prefix}-*",
       "arn:aws:iam::*:role/${var.role_name}-lambda*",
     ]
+  }
+
+  # --- IAM: read OIDC provider state (terraform refresh needs this) ---
+  # OIDC provider ARN doesn't match the name-prefix patterns above, so
+  # grant read access to all OIDC providers in the account.
+  statement {
+    sid    = "ReadOIDCProviders"
+    effect = "Allow"
+    actions = [
+      "iam:GetOpenIDConnectProvider",
+      "iam:ListOpenIDConnectProviders",
+    ]
+    resources = ["*"]
   }
 
   # --- S3: logging bucket only ---
@@ -459,20 +467,27 @@ data "aws_iam_policy_document" "github_actions_permissions" {
     resources = [var.kms_key_id]
   }
 
-  # --- SSM: only the specific golden-AMI parameter ---
+  # --- SSM: read/write the specific golden-AMI parameter ---
   statement {
-    sid    = "GoldenAmiParameter"
+    sid    = "GoldenAmiParameterReadWrite"
     effect = "Allow"
     actions = [
       "ssm:GetParameter",
       "ssm:GetParameters",
       "ssm:PutParameter",
-      "ssm:DescribeParameters",
       "ssm:GetParameterHistory",
       "ssm:ListTagsForResource",
       "ssm:AddTagsToResource",
     ]
     resources = [aws_ssm_parameter.golden_ami_latest.arn]
+  }
+
+  # --- SSM: DescribeParameters is a list operation that needs * resource ---
+  statement {
+    sid    = "GoldenAmiParameterDescribe"
+    effect = "Allow"
+    actions = ["ssm:DescribeParameters"]
+    resources = ["*"]
   }
 
   # --- Lambda + EventBridge: manage the post-build automation ---
@@ -484,6 +499,7 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "lambda:UpdateFunctionCode",
       "lambda:UpdateFunctionConfiguration",
       "lambda:GetFunction",
+      "lambda:ListVersionsByFunction",
       "lambda:DeleteFunction",
       "lambda:AddPermission",
       "lambda:RemovePermission",
