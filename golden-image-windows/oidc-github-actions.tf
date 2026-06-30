@@ -357,6 +357,13 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "iam:GetInstanceProfile",
       "iam:TagRole",
       "iam:TagInstanceProfile",
+      # Read APIs needed by `terraform refresh` to read the OIDC provider's
+      # current state. Without these the plan step fails with
+      # AccessDenied on iam:GetOpenIDConnectProvider before any diff is shown.
+      "iam:GetOpenIDConnectProvider",
+      "iam:ListOpenIDConnectProviders",
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
     ]
     resources = [
       "arn:aws:iam::*:role/${var.name_prefix}-*",
@@ -380,6 +387,25 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "s3:GetBucketPublicAccessBlock",
       "s3:CreateBucket",
       "s3:DeleteBucket",
+      # Read APIs needed by `terraform refresh` to read the bucket's
+      # current attributes (policy, ACL, tags, encryption, location).
+      # Without these the plan step fails with AccessDenied on
+      # s3:GetBucketPolicy before any diff is shown.
+      "s3:GetBucketPolicy",
+      "s3:GetBucketTagging",
+      "s3:GetBucketAcl",
+      "s3:GetBucketLocation",
+      "s3:GetBucketVersioning",
+      "s3:GetEncryptionConfiguration",
+      "s3:GetAccelerateConfiguration",
+      "s3:GetBucketCORS",
+      "s3:GetBucketLogging",
+      "s3:GetBucketNotification",
+      "s3:GetBucketObjectLockConfiguration",
+      "s3:GetBucketOwnershipControls",
+      "s3:GetReplicationConfiguration",
+      "s3:GetBucketRequestPayment",
+      "s3:GetBucketWebsite",
     ]
     resources = [
       aws_s3_bucket.imagebuilder_logs.arn,
@@ -403,6 +429,10 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "s3:ListBucket",
       "s3:GetBucketVersioning",
       "s3:GetBucketLocation",
+      "s3:GetBucketPolicy",
+      "s3:GetBucketAcl",
+      "s3:GetBucketTagging",
+      "s3:GetEncryptionConfiguration",
       "s3:GetObject",
       "s3:GetObjectVersion",
       "s3:PutObject",
@@ -435,7 +465,11 @@ data "aws_iam_policy_document" "github_actions_permissions" {
     effect = "Allow"
     actions = [
       "ssm:GetParameter",
+      "ssm:GetParameters",
       "ssm:PutParameter",
+      "ssm:DescribeParameters",
+      "ssm:GetParameterHistory",
+      "ssm:ListTagsForResource",
       "ssm:AddTagsToResource",
     ]
     resources = [aws_ssm_parameter.golden_ami_latest.arn]
@@ -455,12 +489,17 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "lambda:RemovePermission",
       "lambda:TagResource",
       "lambda:GetPolicy",
+      "lambda:GetEventSourceMapping",
+      "lambda:ListEventSourceMappings",
+      "lambda:GetFunctionCodeSigningConfig",
       "events:PutRule",
       "events:DeleteRule",
       "events:DescribeRule",
       "events:PutTargets",
       "events:RemoveTargets",
       "events:ListTargetsByRule",
+      "events:ListRules",
+      "events:ListTagsForResource",
       "events:TagResource",
     ]
     resources = ["*"] # Lambda/EventBridge ARNs aren't known before first apply; tighten to name-prefix ARNs once the module has run once if your org requires it
