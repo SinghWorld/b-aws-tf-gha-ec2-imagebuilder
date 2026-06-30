@@ -39,7 +39,7 @@ resource "aws_iam_role_policy_attachment" "imagebuilder_ecr_logs" {
   policy_arn = "arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilderECRContainerBuilds"
 }
 
-# ---------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 # Inline policy: explicit S3 access to the logs bucket.
 # ---------------------------------------------------------------------------
 # The EC2InstanceProfileForImageBuilder managed policy only grants
