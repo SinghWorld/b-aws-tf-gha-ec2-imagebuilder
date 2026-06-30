@@ -35,9 +35,20 @@ b-aws-tf-gha-ec2-imagebuilder/
 │   ├── terraform.tfvars.example     # Template for terraform.tfvars
 │   └── terraform.tfvars             # Actual values (gitignored, from GitHub secrets)
 ├── README.md                         # Full documentation
-├── test.md                           # Testing documentation
-└── bootstrap-sandbox.sh              # Sandbox bootstrap script
+└── test.md                           # Testing documentation
 ```
+
+The golden-image-windows/scripts/ subfolder contains local sandbox lifecycle scripts (not used by CI):
+
+```
+golden-image-windows/scripts/
+├── bootstrap-sandbox.sh              # One-time sandbox bootstrap (creates state bucket,
+│                                       KMS key, tfvars, runs first apply, pushes secrets)
+└── destroybootstrap-sandbox.sh       # Sandbox teardown (terraform destroy, KMS purge,
+                                        removes GitHub secrets, cleans local files)
+```
+
+Both scripts are self-locating — they derive the Terraform working directory from `BASH_SOURCE[0]`, so they can be invoked from anywhere (e.g. `bash golden-image-windows/scripts/bootstrap-sandbox.sh`).
 
 ---
 

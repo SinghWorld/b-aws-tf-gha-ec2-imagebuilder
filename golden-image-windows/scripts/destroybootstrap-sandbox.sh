@@ -28,7 +28,10 @@
 # for any further destruction — running `terraform destroy` from your
 # laptop and from CI in parallel will fight over the same S3 lockfile.
 #
-# Run this from inside the golden-image-windows/ directory (same as bootstrap).
+# This script is self-locating: it derives the Terraform working
+# directory from its own location, so you can invoke it from anywhere
+# (e.g. `bash golden-image-windows/scripts/destroybootstrap-sandbox.sh`).
+# All Terraform operations run against that auto-detected directory.
 #
 # Safety behaviours:
 #   - Confirms AWS identity BEFORE doing anything (matches bootstrap's Step 0)
@@ -41,6 +44,16 @@
 #     (set -euo pipefail)
 #
 set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Self-locate: this script lives in golden-image-windows/scripts/, but
+# the Terraform state and the .tf files live one level up in
+# golden-image-windows/. Resolve that directory from BASH_SOURCE so the
+# script works no matter where it's invoked from.
+# ---------------------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TF_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${TF_DIR}"
 
 # ---------------------------------------------------------------------------
 # Config — must match bootstrap-sandbox.sh
@@ -57,6 +70,8 @@ export AWS_REGION
 echo "=============================================================="
 echo " Golden Image Sandbox DESTROY"
 echo "=============================================================="
+echo "Script dir  : $SCRIPT_DIR"
+echo "Working dir : $TF_DIR"
 echo "AWS profile : $AWS_PROFILE"
 echo "AWS region  : $AWS_REGION"
 echo "GitHub repo : ${GITHUB_ORG}/${GITHUB_REPO}"

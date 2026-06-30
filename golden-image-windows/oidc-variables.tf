@@ -68,6 +68,33 @@ variable "allowed_dispatch_branches" {
   default     = ["*"]
 }
 
+variable "allowed_environments" {
+  description = <<-EOT
+    GitHub Environment names allowed to assume this role via OIDC.
+
+    When a workflow job specifies `environment: <name>` (used for
+    approval gates, environment-scoped secrets, deployment protection
+    rules, etc.), GitHub overrides the OIDC sub claim to the
+    environment-scoped shape:
+        repo:OWNER/REPO:environment:<name>
+    This is true regardless of the underlying event_name (push,
+    pull_request, workflow_dispatch, etc.). Without a trust-policy
+    statement matching this shape, such jobs fail with:
+        Not authorized to perform sts:AssumeRoleWithWebIdentity
+    even if the trust policy already allows the underlying event +
+    branch, because IAM evaluates all conditions in every statement
+    and a sub claim of `:environment:` does not match any
+    `:ref:refs/heads/<branch>` pattern.
+
+    Defaults to ["golden-image-shared-services"] to match the
+    environment declared in both golden-image-terraform.yml and
+    golden-image-build.yml. Override via tfvars if you rename the
+    environment or have additional ones (e.g. ["prod", "staging"]).
+  EOT
+  type        = list(string)
+  default     = ["golden-image-shared-services"]
+}
+
 variable "allow_pull_requests" {
   description = <<-EOT
     Whether to also trust the 'pull_request' GitHub Actions event (needed

@@ -232,5 +232,5 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### ℹ️ After a successful destroy:" >> "$GITHUB_STEP_SUMMARY"
           echo "- The S3 state bucket itself is INTENTIONALLY LEFT IN PLACE (state recovery)." >> "$GITHUB_STEP_SUMMARY"
-          echo "- The OIDC role this workflow just used no longer exists; subsequent apply runs will fail until you re-bootstrap with \`bootstrap-sandbox.sh\`." >> "$GITHUB_STEP_SUMMARY"
-          echo "- The KMS key for AMI encryption (separate from this Terraform config) must be deleted manually with \`destroybootstrap-sandbox.sh\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "- The OIDC role this workflow just used no longer exists; subsequent apply runs will fail until you re-bootstrap with \`golden-image-windows/scripts/bootstrap-sandbox.sh\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "- The KMS key for AMI encryption (separate from this Terraform config) must be deleted manually with \`golden-image-windows/scripts/destroybootstrap-sandbox.sh\`." >> "$GITHUB_STEP_SUMMARY"

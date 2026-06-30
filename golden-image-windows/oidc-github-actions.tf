@@ -58,12 +58,31 @@ locals {
     "repo:${var.github_org}/${var.github_repo}:pull_request"
   ] : []
 
+  # Combined sub patterns used by the merged pull_request statement below:
+  #   pr_branch_subs  — same-repo branches with `:ref:refs/heads/<branch>` shape
+  #   pr_fork_subs    — literal `:pull_request` suffix for PRs from forks
+  # StringLike subsumes StringEquals for literal patterns (no wildcards), so
+  # a single StringLike against the union of both lists matches both shapes
+  # identically — and keeps the rendered trust policy under the AWS 2048-char
+  # quota (see Statement 2 below).
+  pr_subs = concat(local.pr_branch_subs, local.pr_fork_subs)
+
   # workflow_dispatch events share the push sub shape
   # (repo:OWNER/REPO:ref:refs/heads/<branch>), so we build the same kind
   # of StringLike list — wildcards in allowed_dispatch_branches work
   # the same way as in allowed_pr_branches.
   dispatch_branch_subs = [
     for b in var.allowed_dispatch_branches : "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/${b}"
+  ]
+
+  # When a workflow job specifies `environment: <name>`, GitHub
+  # overrides the OIDC sub claim to:
+  #   repo:OWNER/REPO:environment:<name>
+  # regardless of the underlying event_name. None of the branch-ref
+  # sub patterns above will match this shape, so we need a dedicated
+  # list for environment-scoped jobs.
+  env_subs = [
+    for e in var.allowed_environments : "repo:${var.github_org}/${var.github_repo}:environment:${e}"
   ]
 }
 
@@ -118,9 +137,16 @@ data "aws_iam_policy_document" "github_actions_trust" {
     }
   }
 
-  # --- Statement 2: pull_request events → allowed_pr_branches (default any) ---
+  # --- Statement 2: pull_request events (same-repo branches OR forks) ---
+  # Merged from the prior separate same-repo-branches and fork statements
+  # to fit the AWS 2048-char trust-policy size quota (LimitExceeded:
+  # ACLSizePerRole: 2048). Both events share event_name=pull_request and
+  # differ only in the sub-claim suffix (`:ref:refs/heads/<branch>` vs
+  # literal `:pull_request`); a single StringLike against the union of
+  # both pattern lists (local.pr_subs) matches both shapes identically
+  # because StringLike subsumes StringEquals for literal patterns.
   statement {
-    sid    = "AllowPullRequestFromSameRepoBranches"
+    sid    = "AllowPullRequest"
     effect = "Allow"
 
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -145,38 +171,7 @@ data "aws_iam_policy_document" "github_actions_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = local.pr_branch_subs
-    }
-  }
-
-  # --- Statement 3: pull_request events from forks (literal :pull_request) ---
-  statement {
-    sid    = "AllowPullRequestFromFork"
-    effect = "Allow"
-
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-
-    principals {
-      type        = "Federated"
-      identifiers = [local.oidc_provider_arn]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:aud"
-      values   = ["sts.amazonaws.com"]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:event_name"
-      values   = ["pull_request"]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:sub"
-      values   = local.pr_fork_subs
+      values   = local.pr_subs
     }
   }
 
@@ -214,6 +209,43 @@ data "aws_iam_policy_document" "github_actions_trust" {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
       values   = local.dispatch_branch_subs
+    }
+  }
+
+  # --- Statement 5: GitHub Environments ---
+  # When a workflow job declares `environment: <name>`, GitHub overrides
+  # the OIDC sub claim to:
+  #   repo:OWNER/REPO:environment:<name>
+  # This is true regardless of the underlying event_name (push,
+  # pull_request, workflow_dispatch, etc.). None of the four branch-ref
+  # statements above match this shape, so jobs that use an environment
+  # (e.g. for approval gates or environment-scoped secrets) will fail
+  # with: Not authorized to perform sts:AssumeRoleWithWebIdentity.
+  #
+  # We deliberately do NOT gate on event_name here: the environment
+  # sub claim is the only distinguishing signal once a job runs under
+  # an environment. aud is still required as a baseline check.
+  statement {
+    sid    = "AllowFromConfiguredEnvironments"
+    effect = "Allow"
+
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [local.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = local.env_subs
     }
   }
 }

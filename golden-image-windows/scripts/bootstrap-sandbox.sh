@@ -18,7 +18,11 @@
 #   6. terraform init (with -backend-config=backend.hcl) / plan / apply
 #   7. Push secrets (state bucket + tfvars) to the GitHub repo via gh CLI
 #
-# Run this from inside the golden-image-windows/ directory.
+# This script is self-locating: it derives the Terraform working
+# directory from its own location, so you can invoke it from anywhere
+# (e.g. `bash golden-image-windows/scripts/bootstrap-sandbox.sh`).
+# All file operations (backend.hcl, terraform.tfvars, lambda zip,
+# terraform init/plan/apply) run against that auto-detected directory.
 #
 # Safety behaviours:
 #   - Never overwrites an existing terraform.tfvars without confirmation
@@ -27,6 +31,17 @@
 #   - Prints exactly which account/region it's about to touch before doing anything
 #
 set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Self-locate: this script lives in golden-image-windows/scripts/, but all
+# Terraform files, the lambda zip, and the rendered backend.hcl /
+# terraform.tfvars live one level up in golden-image-windows/. Resolve
+# that directory from BASH_SOURCE so the script works no matter where
+# it's invoked from.
+# ---------------------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TF_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${TF_DIR}"
 
 # ---------------------------------------------------------------------------
 # Config — adjust these two if your sandbox/repo differs
@@ -43,8 +58,10 @@ export AWS_REGION
 echo "=============================================================="
 echo " Golden Image Sandbox Bootstrap"
 echo "=============================================================="
-echo "AWS profile : $AWS_PROFILE"
-echo "AWS region  : $AWS_REGION"
+echo "Script dir   : $SCRIPT_DIR"
+echo "Working dir  : $TF_DIR"
+echo "AWS profile  : $AWS_PROFILE"
+echo "AWS region   : $AWS_REGION"
 echo ""
 
 # ---------------------------------------------------------------------------
