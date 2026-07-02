@@ -21,6 +21,7 @@ graphify-out
 # ignore claude
 .claude
 .claude/*
+CLAUDE.MD
 
 # ignore kimchi
 .kimchi
