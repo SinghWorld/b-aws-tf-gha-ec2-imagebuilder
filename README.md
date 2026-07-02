@@ -1,51 +1,396 @@
-# Golden Image Pipeline — Windows Server (EC2 Image Builder)
+# Golden Image Pipeline — Windows Server 2022 (EC2 Image Builder)
 
-Enterprise-pattern golden image pipeline for Windows Server, built with EC2 Image Builder and Terraform. Designed to slot into a hub-and-spoke landing zone: build once in a central image factory account, distribute to spoke accounts via Image Builder's distribution config.
+An enterprise-pattern golden image pipeline for **Windows Server 2022**, built
+on **AWS EC2 Image Builder** and **Terraform**, and automated end-to-end
+through **GitHub Actions** using short-lived **OIDC** credentials.
 
-## What this creates
+The pipeline is designed to slot into a hub-and-spoke landing zone: images are
+built once in a central *image factory* account, validated, encrypted with a
+customer-managed KMS key, and distributed to spoke accounts and regions. The
+resulting AMI ID is published to **SSM Parameter Store** so downstream
+infrastructure code never has to hardcode an AMI ID.
 
-- **GitHub OIDC provider + IAM role** — lets GitHub Actions assume an AWS role via short-lived OIDC tokens, no long-lived access keys. Trust is scoped to your specific repo, branch(es), and optionally `pull_request` events. Permissions are least-privilege, split by service, and scoped to this module's actual resource ARNs rather than a blanket Image Builder/EC2 full-access policy
-- **Image recipe** — base AMI (via SSM alias, always latest patched) + ordered components (Windows Updates → CIS hardening → agents → validation tests)
-- **Infrastructure configuration** — the temporary build/test EC2 environment, with S3 logging
-- **Distribution configuration** — copies the finished AMI to N accounts / N regions, encrypted with your KMS key, with launch permissions granted automatically
-- **Image pipeline** — orchestrator with a monthly (patch-Tuesday-aligned) schedule
-- **EventBridge + Lambda** — on successful build, automatically updates an SSM parameter (`/golden-images/<name_prefix>/latest-ami-id`) so downstream Terraform never hardcodes an AMI ID
-- **IAM roles** — least-privilege roles for the build instance and the update Lambda
+> For a deeper architectural walkthrough, security model, and operational
+> runbook, see [`docs/TECHNICAL_DOCUMENTATION.md`](docs/TECHNICAL_DOCUMENTATION.md).
 
-## Prerequisites before `terraform apply`
+---
 
-1. **Network**: `subnet_id` must reach SSM endpoints — either a private subnet with `com.amazonaws.<region>.ssm`, `ssm-messages`, `ec2messages` VPC endpoints, or a subnet with NAT/IGW egress. Image Builder controls the instance entirely through SSM, not SSH/RDP.
-2. **KMS key**: create or reference an existing key. The build account's key policy must allow `kms:CreateGrant` for Image Builder, and if you distribute cross-account, the spoke accounts' roles need `kms:Decrypt` on that key (or use per-region/per-account keys with cross-account grants — common gap people hit on first run).
-3. **Base image ARN**: confirm the current SSM alias string for your target Windows Server version — `aws ssm get-parameters --names /aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base` gives you the current AMI ID; Image Builder wants the imagebuilder-format ARN shown in `terraform.tfvars.example`.
-4. **Lambda zip**: `lambda/update_ssm_param.zip` is already built from `lambda/index.py` in this scaffold. If you edit `index.py`, rezip: `cd lambda && zip update_ssm_param.zip index.py`.
+## Table of Contents
 
-## Deploy
+1. [What This Pipeline Creates](#1-what-this-pipeline-creates)
+2. [How It Works](#2-how-it-works)
+3. [Prerequisites](#3-prerequisites)
+4. [Required Software and Tooling](#4-required-software-and-tooling)
+5. [AWS Resources Created](#5-aws-resources-created)
+6. [Inputs and Outputs](#6-inputs-and-outputs)
+7. [Quick Start](#7-quick-start)
+8. [GitHub Actions Integration](#8-github-actions-integration)
+9. [Consuming the Golden AMI](#9-consuming-the-golden-ami)
+10. [Extending the Pipeline](#10-extending-the-pipeline)
+11. [Operational Notes and Known Gaps](#11-operational-notes-and-known-gaps)
+12. [References](#12-references)
+
+---
+
+## 1. What This Pipeline Creates
+
+At a glance, the Terraform module provisions and wires together:
+
+* A **GitHub OIDC provider** and a tightly-scoped **IAM role** so GitHub
+  Actions can assume AWS credentials without long-lived keys. Trust is scoped
+  to a specific repository, branches, and GitHub Environments.
+* An **EC2 Image Builder image recipe** built from the latest patched AWS
+  Windows Server 2022 base image and an ordered sequence of components:
+  Windows Updates → CIS hardening → agent installation → validation tests.
+* An **infrastructure configuration** that defines the temporary build and
+  test EC2 environment, including a dedicated S3 logging bucket with
+  lifecycle rules and public-access blocking.
+* A **distribution configuration** that copies the finished AMI to N accounts
+  and N regions, encrypted with your KMS key, with launch permissions granted
+  automatically.
+* An **image pipeline** that orchestrates the recipe, infrastructure, and
+  distribution on a monthly, patch-Tuesday-aligned schedule.
+* **EventBridge + Lambda** post-build automation that detects successful
+  builds, updates the SSM Parameter Store entry with the new AMI ID, and
+  publishes an SNS notification.
+* **IAM roles** for the build instance, the Lambda function, and the GitHub
+  Actions runner — each with least-privilege permissions.
+
+---
+
+## 2. How It Works
+
+```
+GitHub Actions (OIDC) ──▶ Terraform Apply ──▶ Image Builder Resources
+                                                      │
+                                                      ▼
+                          ┌───────────────────────────┴────────────────────────┐
+                          ▼                                                    ▼
+                  Image Pipeline                                       EventBridge Rule
+                          │                                                    │
+                          ▼                                                    ▼
+                 Build/Test EC2 Instance                              Lambda (Python)
+                  ┌──────────────────┐                                      │
+                  │ 1. Win Updates   │                                      ▼
+                  │ 2. CIS Hardening │                          ┌─────────────────────┐
+                  │ 3. Agent Install │                          │  Update SSM Param   │
+                  │ 4. Pester Tests  │                          │  Publish SNS Alert  │
+                  └──────────────────┘                          └─────────────────────┘
+                          │                                                    │
+                          ▼                                                    ▼
+                   Encrypted AMI ──▶ Copy to spoke accounts/regions ◀── Downstream Terraform
+                                                                         (reads SSM param)
+```
+
+The full architecture diagram (with per-resource labels) is available in
+`docs/architecture/architecture-ec2-image-builder.drawio`.
+
+---
+
+## 3. Prerequisites
+
+The Terraform module manages Image Builder, IAM, Lambda, EventBridge, and SSM.
+The following resources must already exist before the first `terraform apply`.
+
+### 3.1 AWS Account and Network
+
+| Prerequisite                | Why It Is Required                                                                                                             |
+|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------|
+| AWS account (image factory) | Hosts the pipeline, IAM roles, build environment, and S3 logging bucket                                                        |
+| VPC subnet (`subnet_id`)    | Private subnet with SSM VPC endpoints (`ssm`, `ssmmessages`, `ec2messages`) **or** NAT/IGW egress. Image Builder controls instances exclusively through SSM — no SSH or RDP is used |
+| Security group(s)           | Attached to the build instance; allow outbound to SSM, S3, KMS, and Image Builder service endpoints                            |
+
+### 3.2 Cryptography and Notifications
+
+| Prerequisite                | Why It Is Required                                                                                                             |
+|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------|
+| KMS key (`kms_key_id`)      | Encrypts the resulting AMI snapshot. Key policy must allow `kms:CreateGrant` for Image Builder, and `kms:Decrypt` for spoke accounts that consume the AMI. For multi-Organisation or per-region key topologies, add explicit cross-account grants. |
+| SNS topic (optional)        | Receives build success and failure notifications. Strongly recommended for production use                                       |
+
+### 3.3 Image Distribution
+
+| Prerequisite                   | Why It Is Required                                                                                                          |
+|--------------------------------|-----------------------------------------------------------------------------------------------------------------------------|
+| Target account IDs             | Spoke accounts that should receive the AMI via `distribution_accounts` and `distribution_regions`                            |
+| Cross-region KMS keys/grants   | Required only when distributing to additional regions that use different KMS keys                                            |
+
+### 3.4 Source Control and Identity
+
+| Prerequisite           | Why It Is Required                                                                                                                |
+|------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| GitHub repository      | Hosts the Terraform module and the GitHub Actions workflows. The OIDC role is scoped to `github_org/github_repo`                  |
+| GitHub Environment     | Workflows run under `golden-image-shared-services` so an approval gate can be enforced. OIDC trust policy matches this environment explicitly |
+
+### 3.5 Base Image
+
+| Prerequisite     | Why It Is Required                                                                                  |
+|------------------|-----------------------------------------------------------------------------------------------------|
+| Base image ARN   | SSM alias ARN for the latest patched AWS-managed Windows Server 2022 base. Verify with `aws ssm get-parameters --names /aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base` |
+
+---
+
+## 4. Required Software and Tooling
+
+The following tooling is required on any machine (laptop, CI runner, or
+bastion) that plans, applies, or develops against this module.
+
+### 4.1 Local Development Machine
+
+| Tool         | Minimum Version | Purpose                                                                                                            |
+|--------------|-----------------|--------------------------------------------------------------------------------------------------------------------|
+| Terraform    | **1.10.0**      | Required for S3-native state locking (`use_lockfile = true`). Older versions fall back to deprecated DynamoDB locking |
+| AWS CLI      | **v2**          | Authenticate, look up pipeline ARNs, trigger manual builds, retrieve the resulting AMI ID                            |
+| `jq`         | **1.6+**        | Parse AWS CLI JSON output in ad-hoc scripts                                                                         |
+| `zip`        | any             | Rebuild the Lambda deployment package after editing `lambda/index.py`                                              |
+| `bash`       | **4.0+**        | Run the bootstrap and destroy bootstrap scripts                                                                    |
+| `git`        | **2.30+**       | Clone the repository and push to remote branches                                                                    |
+| OpenSSL      | any             | Compute SHA256 hashes for Lambda source code                                                                        |
+
+### 4.2 CI / CD Environment (GitHub Actions Runners)
+
+The workflows in `.github/workflows/` run on `ubuntu-latest` GitHub-hosted
+runners and install the following via actions:
+
+| Tool                              | Version    | Provided By                                  |
+|-----------------------------------|------------|----------------------------------------------|
+| Terraform                         | 1.11.0     | `hashicorp/setup-terraform@v3`               |
+| AWS credentials                   | OIDC token | `aws-actions/configure-aws-credentials@v4`   |
+| `aws` CLI                         | latest     | Ubuntu runner base image                     |
+| `zip`                             | any        | Ubuntu runner base image                     |
+
+No additional runner setup is required.
+
+### 4.3 AWS Permissions for Local Operators
+
+When applying Terraform locally for the first time (the bootstrap step — see
+[Quick Start](#7-quick-start)), the operator's IAM principal needs permission
+to create all resources listed in [Section 5](#5-aws-resources-created),
+including the IAM roles themselves. Subsequent applies from CI use the OIDC
+role described in [Section 6](#6-inputs-and-outputs).
+
+---
+
+## 5. AWS Resources Created
+
+The Terraform module creates the following AWS resources, grouped by
+functional responsibility.
+
+### 5.1 EC2 Image Builder
+
+| Terraform Resource                                   | Purpose                                                                 |
+|------------------------------------------------------|-------------------------------------------------------------------------|
+| `aws_imagebuilder_component.windows_updates`         | Installs the latest Windows Updates                                      |
+| `aws_imagebuilder_component.cis_hardening`           | Applies CIS Benchmark hardening                                          |
+| `aws_imagebuilder_component.agent_install`           | Installs/validates SSM Agent and CloudWatch Agent                        |
+| `aws_imagebuilder_component.validation_test`         | Pester test suite for hardening, agents, services                        |
+| `aws_imagebuilder_image_recipe`                      | Composes the base image with the four components in order               |
+| `aws_imagebuilder_infrastructure_configuration`     | Build/test environment: instance types, subnet, SG, IAM profile, logs   |
+| `aws_imagebuilder_distribution_configuration`       | Cross-account and cross-region AMI copy with launch permissions         |
+| `aws_imagebuilder_image_pipeline`                    | Orchestrator with schedule and image tests configuration                |
+
+### 5.2 Storage and Parameter Store
+
+| Terraform Resource                                          | Purpose                                                                |
+|-------------------------------------------------------------|------------------------------------------------------------------------|
+| `aws_s3_bucket` (imagebuilder logs)                         | Build/test logs with 180-day lifecycle                                 |
+| `aws_s3_bucket_lifecycle_configuration`                     | Expire logs after 180 days                                             |
+| `aws_s3_bucket_public_access_block`                         | Block all public access on the logs bucket                             |
+| `aws_s3_bucket_policy`                                      | Allow Image Builder service principal to write logs (in-account only)  |
+| `aws_ssm_parameter` (`/golden-images/<name_prefix>/latest-ami-id`) | Stores the latest validated AMI ID; updated by Lambda post-build |
+
+### 5.3 Identity and Access Management
+
+| Terraform Resource                                       | Purpose                                                                                          |
+|----------------------------------------------------------|--------------------------------------------------------------------------------------------------|
+| `aws_iam_role` (Image Builder instance)                  | Build instance role with SSM and Image Builder managed policies                                   |
+| `aws_iam_role_policy_attachment` × 3                     | `AmazonSSMManagedInstanceCore`, `EC2InstanceProfileForImageBuilder`, `EC2InstanceProfileForImageBuilderECRContainerBuilds` |
+| `aws_iam_role_policy` (logs access)                      | Inline policy granting explicit access to the logs bucket                                         |
+| `aws_iam_instance_profile`                               | Instance profile attached to the build/test instances                                            |
+| `aws_iam_role` (Lambda execution)                        | Lambda execution role                                                                             |
+| `aws_iam_role_policy` (Lambda inline)                    | `ssm:PutParameter`, `imagebuilder:GetImage`, `sns:Publish`, CloudWatch Logs                      |
+| `aws_iam_openid_connect_provider` (GitHub OIDC)          | `token.actions.githubusercontent.com` provider                                                   |
+| `aws_iam_role` (GitHub Actions)                          | Role assumed by GitHub Actions via OIDC                                                          |
+| `aws_iam_role_policy` (GitHub Actions inline)            | Twelve least-privilege statements covering Image Builder, EC2, IAM, S3, KMS, SSM, Lambda, EventBridge, CloudWatch Logs, SNS |
+
+### 5.4 Event-Driven Automation
+
+| Terraform Resource                                   | Purpose                                                              |
+|------------------------------------------------------|----------------------------------------------------------------------|
+| `aws_cloudwatch_event_rule` (image state change)     | Matches Image Builder `AVAILABLE` and `FAILED` state transitions     |
+| `aws_cloudwatch_event_target` (invoke Lambda)        | Routes the matched event to the post-build Lambda                    |
+| `aws_lambda_permission` (EventBridge invoke)         | Grants EventBridge permission to invoke the Lambda                   |
+| `aws_lambda_function` (update SSM parameter)         | Python 3.12 handler that updates SSM and publishes to SNS            |
+
+### 5.5 Resource Counts Summary
+
+| Service                     | Approximate Resource Count |
+|-----------------------------|----------------------------|
+| EC2 Image Builder           | 8                          |
+| S3                          | 4 (bucket + 3 supporting)  |
+| SSM                         | 1                          |
+| IAM                         | ~11                        |
+| Lambda                      | 1                          |
+| EventBridge                 | 2                          |
+| **Total**                   | **~27**                    |
+
+---
+
+## 6. Inputs and Outputs
+
+### 6.1 Required Inputs
+
+| Variable             | Description                                                                                       |
+|----------------------|---------------------------------------------------------------------------------------------------|
+| `subnet_id`          | Private subnet with SSM VPC endpoints or NAT/IGW egress                                            |
+| `security_group_ids` | Security groups for the build instance                                                             |
+| `kms_key_id`         | KMS key ARN for AMI encryption                                                                     |
+| `github_org`         | GitHub organisation or username                                                                   |
+| `github_repo`        | Repository name (without org prefix)                                                               |
+| `tf_state_bucket`    | S3 bucket for Terraform remote state (created out of band by `bootstrap-sandbox.sh`)              |
+| `tf_state_region`    | Region of the state bucket                                                                         |
+
+### 6.2 Common Optional Inputs
+
+| Variable                    | Default                                          | Notes                                              |
+|-----------------------------|--------------------------------------------------|----------------------------------------------------|
+| `name_prefix`               | `golden-win2022`                                 | Prefix on every resource name                      |
+| `aws_region`                | `us-east-1`                                      | Primary build region                               |
+| `base_image_arn`            | Windows Server 2022 English base (SSM alias)     | Always resolves to the latest AWS-managed patch baseline |
+| `instance_types`            | `["t3.large", "t3a.large"]`                      | Build instance types                               |
+| `distribution_accounts`     | `[]`                                             | Spoke accounts that receive the AMI                |
+| `distribution_regions`      | `{}`                                             | Additional regions and their target account lists  |
+| `schedule_cron`             | `cron(0 18 ? * SAT#2 *)`                         | Second Saturday of each month                      |
+| `sns_topic_arn`             | `""`                                             | Build notifications                                |
+| `allowed_branches`          | `["main"]`                                       | Push events that can assume the OIDC role          |
+| `allowed_pr_branches`       | `["*"]`                                          | Pull-request events that can run `terraform plan`  |
+| `allowed_dispatch_branches` | `["*"]`                                          | `workflow_dispatch` events                         |
+| `allowed_environments`      | `["golden-image-shared-services"]`               | GitHub Environments overriding the OIDC sub claim  |
+| `create_oidc_provider`      | `true`                                           | Set `false` if the OIDC provider already exists    |
+
+### 6.3 Outputs
+
+| Output                              | Description                                                              |
+|-------------------------------------|--------------------------------------------------------------------------|
+| `pipeline_arn`                      | Image Builder pipeline ARN (used to trigger manual builds)               |
+| `recipe_arn`                        | Image recipe ARN                                                         |
+| `infrastructure_configuration_arn`  | Infrastructure configuration ARN                                         |
+| `distribution_configuration_arn`    | Distribution configuration ARN                                           |
+| `golden_ami_ssm_parameter_name`     | SSM parameter name (consume from downstream Terraform)                   |
+| `logging_bucket`                    | S3 logging bucket name                                                   |
+| `github_actions_role_arn`           | IAM role ARN for GitHub Actions OIDC (`AWS_OIDC_ROLE_ARN` secret)        |
+| `github_oidc_provider_arn`          | OIDC provider ARN (only when `create_oidc_provider = true`)              |
+
+---
+
+## 7. Quick Start
+
+### 7.1 First-Time Bootstrap
+
+The `bootstrap-sandbox.sh` script handles the chicken-and-egg problem of
+bootstrapping a Terraform module that creates its own state backend and its
+own CI role. It is idempotent for a fresh environment.
 
 ```bash
-cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars with your subnet, SG, KMS key, account IDs
+# From the repository root:
+bash golden-image-windows/scripts/bootstrap-sandbox.sh
+```
 
-terraform init
+The script will:
+
+1. Prompt for AWS credentials, region, GitHub org/repo, and other required values.
+2. Create the S3 state bucket (with versioning, encryption, public access blocking).
+3. Create the KMS key used to encrypt the state bucket.
+4. Generate `backend.hcl` and `terraform.tfvars` from your inputs.
+5. Run `terraform init -backend-config=backend.hcl`.
+6. Run `terraform apply` to create all module resources.
+7. Push the required GitHub secrets to your repository.
+
+### 7.2 Manual First Apply (alternative to bootstrap)
+
+If you prefer to run `terraform apply` by hand:
+
+```bash
+cd golden-image-windows
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your subnet, SG, KMS key, account IDs, GitHub org/repo
+
+terraform init -backend-config=backend.hcl   # values for bucket/region/key
+terraform validate
+terraform fmt -check -recursive
 terraform plan
 terraform apply
 ```
 
-First build won't start automatically — the schedule only triggers *future* runs. Kick off the first build manually:
+The schedule only triggers **future** runs, so kick off the first build
+manually:
 
 ```bash
 aws imagebuilder start-image-pipeline-execution \
-  --image-pipeline-arn $(terraform output -raw pipeline_arn)
+  --image-pipeline-arn "$(terraform output -raw pipeline_arn)"
 ```
 
-## Wiring into GitHub Actions
+### 7.3 Tearing Down
 
-Mirror your existing Terraform + Ansible plan/apply pattern:
+```bash
+bash golden-image-windows/scripts/destroybootstrap-sandbox.sh
+```
 
-- **On push to `main`** (component or recipe changes) → `terraform plan` / `apply` to update the pipeline definition, then `start-image-pipeline-execution` to trigger a fresh build
-- **On schedule** → Image Builder's own cron handles this; GitHub Actions doesn't need to poll
-- **Post-build** → no GitHub Actions step needed; the EventBridge + Lambda flow updates SSM automatically. Optionally add a workflow step that reads the SSM parameter and opens a PR bumping any version pins in downstream repos.
+This script runs `terraform destroy`, purges the KMS key (respecting the
+mandatory 7-to-30-day deletion window), removes the GitHub secrets, and
+cleans up local files.
 
-## Consuming the golden AMI downstream
+---
+
+## 8. GitHub Actions Integration
+
+The repository ships with three workflows in `.github/workflows/`.
+
+| Workflow                                | Trigger                                                       | Purpose                                                                                  |
+|-----------------------------------------|---------------------------------------------------------------|------------------------------------------------------------------------------------------|
+| `golden-image-terraform.yml`            | PR, push to main, `workflow_dispatch`                         | `terraform plan` on PRs; `terraform apply -auto-approve` on push to main                 |
+| `golden-image-build.yml`                | Push to main (component changes), `workflow_dispatch`, schedule | Starts an Image Builder pipeline execution and polls until terminal state               |
+| `golden-image-terraform-destroy.yml`    | `workflow_dispatch`                                           | Controlled tear-down of all module resources                                             |
+
+### 8.1 Required GitHub Secrets
+
+The workflows read the following secrets. They are pushed automatically by
+`bootstrap-sandbox.sh`; you can also configure them manually.
+
+| Secret                                | Purpose                                                                |
+|---------------------------------------|------------------------------------------------------------------------|
+| `AWS_OIDC_ROLE_ARN`                   | IAM role ARN assumed via OIDC                                          |
+| `TF_STATE_BUCKET`                     | S3 bucket holding the Terraform remote state                           |
+| `TF_STATE_REGION`                     | Region of the state bucket                                             |
+| `TF_STATE_KEY`                        | Object key of the state file (defaults to `golden-image-windows/terraform.tfstate`) |
+| `GOLDEN_IMAGE_SUBNET_ID`              | Build instance subnet                                                  |
+| `GOLDEN_IMAGE_SG_IDS`                 | JSON array of security group IDs                                       |
+| `GOLDEN_IMAGE_KMS_KEY_ARN`            | KMS key ARN for AMI encryption                                         |
+| `GOLDEN_IMAGE_DISTRIBUTION_ACCOUNTS`  | JSON array of spoke account IDs                                        |
+| `GOLDEN_IMAGE_SNS_TOPIC_ARN`          | SNS topic ARN for build notifications                                  |
+
+### 8.2 OIDC Trust Policy
+
+The GitHub Actions role's trust policy uses four statements, each gated on
+`event_name` (and a fifth for GitHub Environments):
+
+* **push** from `allowed_branches` (default `["main"]`) — drives `terraform apply`.
+* **workflow_dispatch** from `allowed_dispatch_branches` (default `["*"]`) —
+  manual workflow runs.
+* **pull_request** from `allowed_pr_branches` plus the literal `:pull_request`
+  suffix for forks — drives `terraform plan` on PRs.
+* **environment** — when a job declares an `environment:` GitHub overrides the
+  OIDC sub claim to `repo:OWNER/REPO:environment:<name>`; this statement
+  matches that shape regardless of the underlying event.
+
+The audience check (`sts.amazonaws.com`) is enforced in every statement.
+
+---
+
+## 9. Consuming the Golden AMI
+
+Downstream infrastructure should always read the AMI ID from SSM Parameter
+Store — never hardcode an AMI ID in a launch template, auto scaling group,
+or EC2 resource.
 
 ```hcl
 data "aws_ssm_parameter" "golden_ami" {
@@ -55,347 +400,105 @@ data "aws_ssm_parameter" "golden_ami" {
 resource "aws_instance" "example" {
   ami           = data.aws_ssm_parameter.golden_ami.value
   instance_type = "t3.large"
-  # ...
 }
 ```
 
-Never hardcode an AMI ID in launch templates/ASGs — always read this parameter.
-
-## Extending the hardening component
-
-`components/cis-hardening.yaml` covers only the highest-impact CIS controls inline, as a starting point. For full compliance coverage, swap that block for one of:
-
-- Microsoft's official CIS Benchmark GPO baseline, imported via `LGPO.exe`
-- A PowerShell DSC configuration pulled from your org's compliance-as-code repo
-- Ansible playbook invocation (since you already have Windows Ansible pipelines, you could call `ansible-pull` from within the component instead of inline PowerShell)
-
-## Known gaps to fill in for your environment
-
-- **Domain join**: no component for AD DS / Azure AD join — add one if Client workloads need domain membership baked in (often better done at launch time via SSM Association instead, so the golden image stays domain-agnostic and reusable across environments)
-- **EDR/AV agent**: `agent-install.yaml` has a placeholder step — plug in your actual agent installer, pulling the binary/token from S3 or Secrets Manager, never hardcoded
-- **Cross-account KMS grants**: not automated here — if spoke accounts are in a different Organization or you're not using a single multi-region key, add explicit grants
-- **Multi-version**: this scaffold builds one Windows Server version; duplicate the module (different `name_prefix` + `base_image_arn`) per OS version you need to support
-
-## GitHub OIDC setup notes
-
-- **One OIDC provider per AWS account per URL.** If you already created `token.actions.githubusercontent.com` as a provider for another pipeline (e.g. `Terraform-Drift-Detection`), set `create_oidc_provider = false` and pass that provider's ARN via `existing_oidc_provider_arn` — otherwise `terraform apply` fails with a "provider already exists" error.
-- **Trust is branch + event scoped**, not just repo-scoped. By default only `main` and `pull_request` events are trusted (`allowed_branches`, `allow_pull_requests` in `terraform.tfvars`). A workflow running from any other branch will get an `AccessDenied` on `sts:AssumeRoleWithWebIdentity` — this is intentional, tighten or loosen via those two variables.
-- **First apply is a bootstrapping problem.** This OIDC role is what your GitHub Actions workflows assume to manage this module — but the module itself creates that role. Apply this once manually (your own credentials) before the workflows can run, then hand off to CI for everything after.
-- After applying, copy the `github_actions_role_arn` output into the `AWS_OIDC_ROLE_ARN` GitHub repo secret referenced by both workflow files.
-- The IAM policy ARN patterns in `oidc-github-actions.tf` reference `var.name_prefix` directly, so renaming `name_prefix` in `terraform.tfvars` automatically keeps the OIDC role's permissions scoped correctly — no separate edits needed.
+The parameter is updated **only on successful builds**. Failed builds leave
+the previous known-good AMI in place, so downstream workloads always point at
+a validated image.
 
 ---
 
-## AWS EC2 Image Builder - Windows Server 2022 Golden AMI Pipeline
+## 10. Extending the Pipeline
 
-### Overview
+### 10.1 Adding a New Image Builder Component
 
-This Terraform module provisions a **production-ready EC2 Image Builder pipeline** for automatically building, testing, hardening, validating, encrypting, and distributing **Windows Server 2022 Golden AMIs**.
+1. Create the component YAML in `golden-image-windows/components/`.
+2. Add an `aws_imagebuilder_component` resource in `recipe.tf`.
+3. Append the new component to the `component {}` list on
+   `aws_imagebuilder_image_recipe.this`. Order matters — components run
+   sequentially in the build phase.
+4. Bump the component `version` and the recipe `version`.
+5. Open a PR; CI will run `terraform plan` automatically.
+6. Merge to `main` to apply the changes. The build workflow fires because
+   the components directory changed.
 
-The solution includes:
+### 10.2 Updating the Lambda Function
 
-- Automated Windows patching
-- CIS hardening
-- SSM & CloudWatch Agent installation
-- Validation using Pester
-- Cross-account AMI distribution
-- Event-driven automation
-- GitHub Actions OIDC integration
-- Automated SSM Parameter updates
-- SNS notifications
-
----
-
-### AWS Resources Created
-
-#### Core Image Builder Resources
-
-| Resource | Purpose |
-|----------|---------|
-| `aws_imagebuilder_image_pipeline` | Orchestrates the entire build pipeline |
-| `aws_imagebuilder_image_recipe` | Defines base AMI, components and block device mappings |
-| `aws_imagebuilder_infrastructure_configuration` | Build instance configuration including subnet, IAM role, security groups and logging |
-| `aws_imagebuilder_distribution_configuration` | Defines target accounts, regions, launch permissions and encryption |
-| `aws_imagebuilder_component` (×4) | Windows Updates, CIS Hardening, Agent Install and Validation |
-
----
-
-### Custom Image Builder Components
-
-| Component | Purpose |
-|-----------|---------|
-| `components/windows-updates.yaml` | Install latest Windows Updates |
-| `components/cis-hardening.yaml` | Apply CIS Benchmark hardening |
-| `components/agent-install.yaml` | Install and validate SSM & CloudWatch Agent |
-| `components/validation-test.yaml` | Execute Pester validation tests |
-
----
-
-### IAM Resources
-
-| Resource | Purpose |
-|----------|---------|
-| `aws_iam_role.imagebuilder_instance_role` | EC2 Image Builder Instance Role |
-| `aws_iam_role_policy_attachment.ssm_managed_instance_core` | AmazonSSMManagedInstanceCore |
-| `aws_iam_role_policy_attachment.imagebuilder_instance_policy` | EC2InstanceProfileForImageBuilder |
-| `aws_iam_role_policy_attachment.imagebuilder_ecr_logs` | ECR Container Build permissions |
-| `aws_iam_instance_profile.imagebuilder_profile` | Instance Profile used during build |
-
----
-
-### Event-Driven Automation
-
-| Resource | Purpose |
-|----------|---------|
-| `aws_cloudwatch_event_rule.image_state_change` | Detect Image Builder state changes |
-| `aws_cloudwatch_event_target.invoke_update_lambda` | Invoke Lambda |
-| `aws_lambda_permission.allow_eventbridge` | Allow EventBridge to invoke Lambda |
-| `aws_iam_role.lambda_update_role` | Lambda execution role |
-| `aws_iam_role_policy.lambda_update_policy` | Permissions for SSM, SNS, Logs, Image Builder |
-| `aws_lambda_function.update_golden_ami_parameter` | Update SSM Parameter Store with latest AMI |
-
----
-
-### Storage & Logging
-
-| Resource | Purpose |
-|----------|---------|
-| `aws_s3_bucket.imagebuilder_logs` | Store Image Builder logs |
-| `aws_s3_bucket_lifecycle_configuration.imagebuilder_logs` | Delete logs after 180 days |
-| `aws_s3_bucket_public_access_block.imagebuilder_logs` | Disable public access |
-
----
-
-### Parameter Store
-
-| Resource | Purpose |
-|----------|---------|
-| `aws_ssm_parameter.golden_ami_latest` | Stores latest validated Golden AMI ID |
-
-Parameter Name:
-```
-/golden-images/golden-win2022/latest-ami-id
+```bash
+cd golden-image-windows/lambda
+# Edit index.py
+zip -j update_ssm_param.zip index.py
+git add update_ssm_param.zip
+git commit -m "feat(lambda): update SSM notification format"
+git push
 ```
 
----
+The `golden-image-terraform.yml` workflow rebuilds the package, computes the
+new SHA256 hash, and passes it to `terraform apply` so the Lambda is updated
+deterministically.
 
-### GitHub Actions OIDC Integration
+### 10.3 Adding Cross-Account or Cross-Region Distribution
 
-| Resource | Purpose |
-|----------|---------|
-| `aws_iam_openid_connect_provider.github` | GitHub OIDC Provider |
-| `aws_iam_role.github_actions` | IAM Role assumed by GitHub Actions |
-| `aws_iam_role_policy.github_actions_permissions` | Least privilege permissions |
+* Append account IDs to `distribution_accounts` in `terraform.tfvars` for
+  same-region sharing.
+* Add entries to `distribution_regions` for additional regions. Each entry
+  takes its own `target_account_ids` and `ami_name`.
+* Ensure the KMS key policy grants `kms:Decrypt` to the destination accounts,
+  or use per-region KMS keys with explicit grants.
 
----
+### 10.4 Tightening the OIDC Trust Policy
 
-### Input Variables
-
-| Variable | Required | Default |
-|----------|----------|---------|
-| `name_prefix` | No | `golden-win2022` |
-| `aws_region` | No | `us-east-1` |
-| `base_image_arn` | No | AWS Windows 2022 Base Image |
-| `instance_types` | No | `["t3.large","t3a.large"]` |
-| `subnet_id` | **Yes** | — |
-| `security_group_ids` | **Yes** | — |
-| `instance_profile_name` | No | `golden-win2022-imagebuilder-profile` |
-| `kms_key_id` | **Yes** | — |
-| `distribution_accounts` | No | `[]` |
-| `distribution_regions` | No | `{}` |
-| `schedule_cron` | No | Second Saturday Monthly |
-| `sns_topic_arn` | No | `""` |
-| `github_org` | **Yes** | — |
-| `github_repo` | **Yes** | — |
+The defaults are intentionally permissive (`["*"]`) so PR-based plans and
+manual triggers work out of the box for feature branches. Once your team
+settles on a branching model, narrow `allowed_pr_branches` and
+`allowed_dispatch_branches` to specific prefixes (e.g. `release/*`,
+`hotfix/*`). Push events remain restricted to `allowed_branches` regardless
+of those settings, so tightening them does **not** widen who can trigger
+`terraform apply`.
 
 ---
 
-### Outputs
+## 11. Operational Notes and Known Gaps
 
-| Output | Description |
-|--------|-------------|
-| `pipeline_arn` | Image Builder Pipeline ARN |
-| `recipe_arn` | Image Recipe ARN |
-| `golden_ami_ssm_parameter_name` | SSM Parameter Name |
-| `logging_bucket` | S3 Logging Bucket |
-| `infrastructure_configuration_arn` | Infrastructure Configuration ARN |
-| `distribution_configuration_arn` | Distribution Configuration ARN |
-| `github_actions_role_arn` | IAM Role ARN for GitHub Actions |
-| `github_oidc_provider_arn` | GitHub OIDC Provider ARN |
+### 11.1 Operational Notes
 
----
+* **First apply is manual.** The OIDC role this module creates is what
+  GitHub Actions uses to apply it. Bootstrap once with your own credentials,
+  then hand off to CI.
+* **One OIDC provider per AWS account per URL.** If you already created
+  `token.actions.githubusercontent.com` for another pipeline, set
+  `create_oidc_provider = false` and pass its ARN via
+  `existing_oidc_provider_arn`.
+* **State locking.** Uses Terraform 1.10+ S3-native locking (`use_lockfile`).
+  DynamoDB-based locking is intentionally disabled because it is deprecated
+  upstream.
+* **Log retention.** Defaults to 180 days. Adjust
+  `aws_s3_bucket_lifecycle_configuration.imagebuilder_logs` to match your
+  audit retention requirements.
+* **SSM parameter is the contract.** Downstream Terraform reads
+  `/golden-images/<name_prefix>/latest-ami-id`. Never hardcode AMI IDs.
 
-### GitHub Actions Workflows
+### 11.2 Known Gaps
 
-| Workflow | Trigger | Purpose |
-|----------|---------|---------|
-| `golden-image-build.yml` | Push, Schedule, Manual | Trigger Image Builder Pipeline |
-| `golden-image-terraform.yml` | Terraform Changes | Terraform Plan & Apply |
-
----
-
-### Architecture
-
-```mermaid
-flowchart TD
-
-    GH[GitHub Actions<br>OIDC Authentication]
-
-    TF[Terraform Apply]
-
-    PIPE[EC2 Image Builder Pipeline]
-
-    RECIPE[Image Recipe]
-
-    INFRA[Infrastructure Configuration]
-
-    DIST[Distribution Configuration]
-
-    BUILD[Windows Build Instance]
-
-    UPDATE[Windows Updates]
-
-    CIS[CIS Hardening]
-
-    AGENT[Install SSM & CloudWatch Agent]
-
-    TEST[Pester Validation]
-
-    AMI[Golden AMI]
-
-    COPY[Cross Account / Region Distribution]
-
-    EVENT[EventBridge]
-
-    LAMBDA[Lambda]
-
-    SSM[SSM Parameter Store]
-
-    SNS[SNS Notification]
-
-    CONSUMER[Terraform / ASG / Launch Templates]
-
-    GH --> TF
-
-    TF --> PIPE
-
-    PIPE --> RECIPE
-    PIPE --> INFRA
-    PIPE --> DIST
-
-    RECIPE --> BUILD
-    INFRA --> BUILD
-
-    BUILD --> UPDATE
-    UPDATE --> CIS
-    CIS --> AGENT
-    AGENT --> TEST
-
-    TEST --> AMI
-
-    AMI --> COPY
-
-    AMI --> EVENT
-
-    EVENT --> LAMBDA
-
-    LAMBDA --> SSM
-
-    LAMBDA --> SNS
-
-    SSM --> CONSUMER
-```
+| Gap                                         | Recommended Approach                                                                                          |
+|---------------------------------------------|---------------------------------------------------------------------------------------------------------------|
+| Domain join                                 | Add a component for AD DS / Azure AD join, or perform it at launch via SSM Association. Keep the golden image domain-agnostic when possible |
+| EDR / AV agent                              | Replace the placeholder step in `agent-install.yaml` with the real installer, pulling binaries/tokens from S3 or Secrets Manager |
+| Cross-account KMS grants                    | Add explicit `kms:Grant` resources when spoke accounts are in a different Organisation or use different keys   |
+| Multi-version support                       | Duplicate the module with a different `name_prefix` and `base_image_arn` per OS version                        |
+| Full CIS coverage                           | Replace inline controls in `cis-hardening.yaml` with Microsoft's official CIS GPO baseline via `LGPO.exe`, or call a DSC / Ansible pull from your compliance-as-code repo |
 
 ---
 
-### Build Workflow
+## 12. References
 
-```text
-GitHub Actions
-        │
-        ▼
-Terraform Apply
-        │
-        ▼
-Create Image Builder Resources
-        │
-        ▼
-Launch Build Instance
-        │
-        ▼
-Install Windows Updates
-        │
-        ▼
-Apply CIS Hardening
-        │
-        ▼
-Install SSM & CloudWatch Agent
-        │
-        ▼
-Execute Validation Tests
-        │
-        ▼
-Create Golden AMI
-        │
-        ▼
-Copy AMI to Target Accounts & Regions
-        │
-        ▼
-EventBridge Notification
-        │
-        ▼
-Lambda Function
-        │
-        ├── Update SSM Parameter
-        └── Publish SNS Notification
-```
-
----
-
-### Prerequisites
-
-The following resources **must already exist** before deploying this module:
-
-- VPC Subnet with SSM VPC Endpoints or NAT Gateway
-- Security Groups
-- KMS Key
-- SNS Topic (optional but recommended)
-- Target AWS Account IDs
-- GitHub Repository
-- GitHub OIDC (or existing provider)
-
----
-
-### Key Features
-
-- Enterprise-ready Golden AMI Pipeline
-- Automated Windows Updates
-- CIS Benchmark Hardening
-- Automated Validation (Pester)
-- Cross-Account Distribution
-- Multi-Region Distribution
-- KMS Encryption
-- GitHub Actions OIDC Authentication
-- Event-Driven Automation
-- Automated SSM Parameter Updates
-- SNS Notifications
-- Infrastructure as Code using Terraform
-- Production Ready
-
----
-
-### Technology Stack
-
-- Terraform
-- AWS EC2 Image Builder
-- AWS Lambda
-- Amazon EventBridge
-- Amazon SNS
-- AWS Systems Manager Parameter Store
-- Amazon S3
-- IAM
-- GitHub Actions
-- OIDC Authentication
-- Windows Server 2022
-- PowerShell
-- Pester Testing
+* [`docs/TECHNICAL_DOCUMENTATION.md`](docs/TECHNICAL_DOCUMENTATION.md) —
+  Detailed architecture, security model, and operational runbook.
+* [`docs/architecture/`](docs/architecture/) — drawio architecture diagrams.
+* AWS EC2 Image Builder — user guide and API reference.
+* AWS IAM OIDC identity providers — trust policy and condition keys.
+* Terraform S3 backend with native locking — `use_lockfile` (Terraform 1.10+).
+* GitHub Actions OIDC — token claims (`sub`, `event_name`, `environment`).
+* CIS Microsoft Windows Server 2022 Benchmark — controls applied in
+  `cis-hardening.yaml`.
