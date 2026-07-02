@@ -484,9 +484,9 @@ data "aws_iam_policy_document" "github_actions_permissions" {
 
   # --- SSM: DescribeParameters is a list operation that needs * resource ---
   statement {
-    sid    = "GoldenAmiParameterDescribe"
-    effect = "Allow"
-    actions = ["ssm:DescribeParameters"]
+    sid       = "GoldenAmiParameterDescribe"
+    effect    = "Allow"
+    actions   = ["ssm:DescribeParameters"]
     resources = ["*"]
   }
 
