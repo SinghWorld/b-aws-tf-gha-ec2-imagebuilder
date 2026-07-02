@@ -445,8 +445,14 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "s3:GetEncryptionConfiguration",
       "s3:GetObject",
       "s3:GetObjectVersion",
+      "s3:GetObjectAcl",
+      "s3:GetObjectTagging",
+      "s3:GetObjectVersionTagging",
       "s3:PutObject",
+      "s3:PutObjectAcl",
+      "s3:PutObjectTagging",
       "s3:DeleteObject",
+      "s3:DeleteObjectVersion",
     ]
     resources = var.tf_state_bucket != null && var.tf_state_bucket != "" ? [
       "arn:aws:s3:::${var.tf_state_bucket}",
