@@ -89,21 +89,27 @@ locals {
 ## ---------------------------------------------------------------------------
 ## TRUST POLICY — who can assume this role
 ## ---------------------------------------------------------------------------
-## Three statements, each gated on event_name so push and pull_request
-## are scoped independently. The audience check (`sts.amazonaws.com`)
-## is in every statement.
+## Four statements, each gated on event_name so push, pull_request,
+## workflow_dispatch, and environment-scoped jobs are scoped independently.
+## The audience check (`sts.amazonaws.com`) is in every statement.
 ##
 ## Statement 1 — `push` events from allowed_branches (typically just main).
 ##                This is what triggers `terraform apply`.
 ##
-## Statement 2 — `pull_request` events from same-repo branches matching
-##                allowed_pr_branches. This is what triggers `terraform
-##                plan` on PRs from feature branches. Defaults to ["*"]
-##                so feature branches work out of the box.
+## Statement 2 — `workflow_dispatch` events (manual "Run workflow").
+##                Used by destroy workflow and manual builds. The sub claim
+##                shape is the same as push, so we use allowed_dispatch_branches
+##                (default ["*"] so any branch works).
 ##
-## Statement 3 — `pull_request` events from forks. GitHub issues a
-##                different sub claim for fork PRs (literal `:pull_request`
-##                suffix instead of `:ref:refs/heads/<branch>`).
+## Statement 3 — `pull_request` events from same-repo branches matching
+##                allowed_pr_branches, plus fork PRs. Merged into one statement
+##                to fit AWS 2048-char trust-policy size quota. Uses local.pr_subs
+##                which combines branch-ref and literal `:pull_request` patterns.
+##
+## Statement 4 — GitHub Environments.
+##                When a workflow job declares `environment: <name>`, GitHub
+##                overrides the sub claim to `repo:OWNER/REPO:environment:<name>`.
+##                This statement matches that shape regardless of underlying event.
 
 data "aws_iam_policy_document" "github_actions_trust" {
   # --- Statement 1: push events → only allowed_branches ---
@@ -137,7 +143,41 @@ data "aws_iam_policy_document" "github_actions_trust" {
     }
   }
 
-  # --- Statement 2: pull_request events (same-repo branches OR forks) ---
+  # --- Statement 3: workflow_dispatch events ---
+  # GitHub's sub claim for workflow_dispatch is the same shape as push:
+  #   repo:OWNER/REPO:ref:refs/heads/<branch>
+  # So we reuse the same pattern logic (StringLike with wildcards).
+  statement {
+    sid    = "AllowWorkflowDispatchFromAllowedBranches"
+    effect = "Allow"
+
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [local.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:event_name"
+      values   = ["workflow_dispatch"]
+    }
+
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = local.dispatch_branch_subs
+    }
+  }
+
+  # --- Statement 4: pull_request events (same-repo branches OR forks) ---
   # Merged from the prior separate same-repo-branches and fork statements
   # to fit the AWS 2048-char trust-policy size quota (LimitExceeded:
   # ACLSizePerRole: 2048). Both events share event_name=pull_request and
@@ -172,43 +212,6 @@ data "aws_iam_policy_document" "github_actions_trust" {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
       values   = local.pr_subs
-    }
-  }
-
-  # --- Statement 4: workflow_dispatch events (manual "Run workflow") ---
-  # Without this statement, manually triggering the workflow from a
-  # feature branch via the Actions UI fails with:
-  #   Not authorized to perform sts:AssumeRoleWithWebIdentity
-  # because no statement matches event_name=workflow_dispatch. The sub
-  # claim is the same shape as push, so we StringLike against
-  # allowed_dispatch_branches (default ["*"] so any branch works).
-  statement {
-    sid    = "AllowWorkflowDispatchFromAllowedBranches"
-    effect = "Allow"
-
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-
-    principals {
-      type        = "Federated"
-      identifiers = [local.oidc_provider_arn]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:aud"
-      values   = ["sts.amazonaws.com"]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:event_name"
-      values   = ["workflow_dispatch"]
-    }
-
-    condition {
-      test     = "StringLike"
-      variable = "token.actions.githubusercontent.com:sub"
-      values   = local.dispatch_branch_subs
     }
   }
 
