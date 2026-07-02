@@ -357,6 +357,8 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "iam:GetInstanceProfile",
       "iam:TagRole",
       "iam:TagInstanceProfile",
+      "iam:UntagRole",
+      "iam:ListInstanceProfilesForRole",
       "iam:GetPolicy",
       "iam:GetPolicyVersion",
     ]
@@ -504,6 +506,7 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "lambda:AddPermission",
       "lambda:RemovePermission",
       "lambda:TagResource",
+      "lambda:UntagResource",
       "lambda:GetPolicy",
       "lambda:GetEventSourceMapping",
       "lambda:ListEventSourceMappings",
@@ -517,6 +520,7 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "events:ListRules",
       "events:ListTagsForResource",
       "events:TagResource",
+      "events:UntagResource",
     ]
     resources = ["*"] # Lambda/EventBridge ARNs aren't known before first apply; tighten to name-prefix ARNs once the module has run once if your org requires it
   }
