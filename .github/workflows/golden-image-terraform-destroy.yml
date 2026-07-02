@@ -98,6 +98,14 @@ jobs:
           TF_STATE_REGION: ${{ secrets.TF_STATE_REGION }}
           TF_STATE_KEY:    ${{ secrets.TF_STATE_KEY }}
         run: |
+          # Derive github_org / github_repo from the workflow context so the
+          # generated tfvars always matches the repo running this workflow —
+          # both variables are required by oidc-variables.tf with no default,
+          # and omitting them makes `terraform plan` exit 1 with
+          # "No value for required variable".
+          REPO_FULL="${{ github.repository }}"
+          REPO_OWNER="${REPO_FULL%/*}"
+          REPO_NAME="${REPO_FULL#*/}"
           cat > terraform.tfvars <<EOF
           aws_region              = "${{ env.AWS_REGION }}"
           tf_state_bucket         = "${TF_STATE_BUCKET}"
@@ -108,6 +116,8 @@ jobs:
           kms_key_id              = "${{ secrets.GOLDEN_IMAGE_KMS_KEY_ARN }}"
           distribution_accounts   = ${{ secrets.GOLDEN_IMAGE_DISTRIBUTION_ACCOUNTS }}
           sns_topic_arn           = "${{ secrets.GOLDEN_IMAGE_SNS_TOPIC_ARN }}"
+          github_org              = "${REPO_OWNER}"
+          github_repo             = "${REPO_NAME}"
           EOF
 
       - name: Generate destroy plan
