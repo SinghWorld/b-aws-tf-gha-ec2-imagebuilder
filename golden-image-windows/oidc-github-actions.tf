@@ -358,6 +358,9 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "iam:TagRole",
       "iam:TagInstanceProfile",
       "iam:UntagRole",
+      "iam:UntagInstanceProfile",
+      "iam:TagOpenIDConnectProvider",
+      "iam:UntagOpenIDConnectProvider",
       "iam:ListInstanceProfilesForRole",
       "iam:GetPolicy",
       "iam:GetPolicyVersion",
@@ -366,6 +369,7 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "arn:aws:iam::*:role/${var.name_prefix}-*",
       "arn:aws:iam::*:instance-profile/${var.name_prefix}-*",
       "arn:aws:iam::*:role/${var.role_name}-lambda*",
+      "arn:aws:iam::*:oidc-provider/token.actions.githubusercontent.com",
     ]
   }
 
@@ -486,6 +490,7 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "ssm:GetParameterHistory",
       "ssm:ListTagsForResource",
       "ssm:AddTagsToResource",
+      "ssm:RemoveTagsFromResource",
     ]
     resources = [aws_ssm_parameter.golden_ami_latest.arn]
   }
