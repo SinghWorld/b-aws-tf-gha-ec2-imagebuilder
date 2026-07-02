@@ -100,7 +100,7 @@ resource "aws_lambda_function" "update_golden_ami_parameter" {
   runtime          = "python3.12"
   timeout          = 30
   filename         = "${path.module}/lambda/update_ssm_param.zip"
-  source_code_hash = filebase64sha256("${path.module}/lambda/update_ssm_param.zip")
+  source_code_hash = var.lambda_source_code_hash != "" ? var.lambda_source_code_hash : filebase64sha256("${path.module}/lambda/update_ssm_param.zip")
 
   environment {
     variables = {

@@ -110,3 +110,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "lambda_source_code_hash" {
+  description = "SHA256 hash of the Lambda deployment package (base64-encoded). Used to force updates when code changes."
+  type        = string
+  default     = ""
+}

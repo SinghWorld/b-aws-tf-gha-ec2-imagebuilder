@@ -110,7 +110,7 @@ variable "allow_pull_requests" {
 variable "role_name" {
   description = "Name of the IAM role GitHub Actions will assume"
   type        = string
-  default     = "golden-image-github-actions-role"
+  default     = "golden-win2022-github-actions-role"
 }
 
 variable "create_oidc_provider" {

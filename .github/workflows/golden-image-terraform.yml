@@ -63,7 +63,13 @@ jobs:
 
       - name: Build Lambda deployment package
         working-directory: ${{ env.TF_WORKING_DIR }}/lambda
-        run: zip -j update_ssm_param.zip index.py
+        id: build_lambda
+        run: |
+          zip -j update_ssm_param.zip index.py
+          # Compute source_code_hash for Terraform to use consistently
+          HASH=$(sha256sum update_ssm_param.zip | cut -d' ' -f1 | xxd -r -p | base64)
+          echo "source_code_hash=$HASH" >> "$GITHUB_OUTPUT"
+          echo "Computed source_code_hash: $HASH"
 
       # Render backend.hcl from secrets so `terraform init
       # -backend-config=backend.hcl` resolves the partial backend block in
@@ -155,6 +161,7 @@ jobs:
           set +e
           terraform plan -input=false -no-color -out=tfplan.binary \
             -var-file=terraform.tfvars \
+            -var="lambda_source_code_hash=${{ steps.build_lambda.outputs.source_code_hash }}" \
             > plan_output.txt
           PLAN_EXIT=$?
           set -e
@@ -217,7 +224,13 @@ jobs:
 
       - name: Build Lambda deployment package
         working-directory: ${{ env.TF_WORKING_DIR }}/lambda
-        run: zip -j update_ssm_param.zip index.py
+        id: build_lambda
+        run: |
+          zip -j update_ssm_param.zip index.py
+          # Compute source_code_hash for Terraform to use consistently
+          HASH=$(sha256sum update_ssm_param.zip | cut -d' ' -f1 | xxd -r -p | base64)
+          echo "source_code_hash=$HASH" >> "$GITHUB_OUTPUT"
+          echo "Computed source_code_hash: $HASH"
 
       - name: Render backend.hcl from secrets
         working-directory: ${{ env.TF_WORKING_DIR }}
