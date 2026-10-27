@@ -480,7 +480,7 @@ bash golden-image-windows/scripts/destroybootstrap-sandbox.sh
 |----------|-------------|
 | [`docs/TECHNICAL_DOCUMENTATION.md`](docs/TECHNICAL_DOCUMENTATION.md) | **Deep-dive**: Architecture, security model, Terraform module reference, operational runbook |
 | [`docs/architecture/`](docs/architecture/) | Draw.io architecture diagrams (editable) |
-| [`R_How-and-Where-to-start.md`](R_How-and-Where-to-start.md) | Quick-reference getting started guide |
+| [`docs/How-and-Where-to-start.md`](docs/How-and-Where-to-start.md) | Quick-reference getting started guide |
 | [AWS EC2 Image Builder Docs](https://docs.aws.amazon.com/imagebuilder/) | Official user guide & API reference |
 | [Terraform S3 Backend + Locking](https://developer.hashicorp.com/terraform/language/settings/backends/s3) | `use_lockfile` (Terraform 1.10+) |
 | [GitHub Actions OIDC](https://docs.github.com/en/actions/security-for-github-actions/about-security-hardening-with-openid-connect) | Token claims: `sub`, `event_name`, `environment` |
