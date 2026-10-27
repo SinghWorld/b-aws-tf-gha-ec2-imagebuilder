@@ -371,4 +371,69 @@ This reverses bootstrap in order: Terraform destroy → KMS key deletion → Git
 
 ---
 
+## Following AWS Resources will Create (~27 Total)
+
+### EC2 Image Builder (8 resources)
+
+| Resource | Count |
+|----------|------:|
+| aws_imagebuilder_component (windows-updates, cis-hardening, agent-install, validation-test) | 4 |
+| aws_imagebuilder_image_recipe | 1 |
+| aws_imagebuilder_infrastructure_configuration | 1 |
+| aws_imagebuilder_distribution_configuration | 1 |
+| aws_imagebuilder_image_pipeline | 1 |
+
+### S3 Storage (4 resources)
+
+| Resource | Count |
+|----------|------:|
+| aws_s3_bucket (imagebuilder logs) | 1 |
+| aws_s3_bucket_lifecycle_configuration | 1 |
+| aws_s3_bucket_public_access_block | 1 |
+| aws_s3_bucket_policy | 1 |
+
+### SSM Parameter Store (1 resource)
+
+| Resource | Count |
+|----------|------:|
+| aws_ssm_parameter (/golden-images/<prefix>/latest-ami-id) | 1 |
+
+### IAM (11 resources)
+
+| Resource | Count |
+|----------|------:|
+| aws_iam_role (Image Builder instance) | 1 |
+| aws_iam_role_policy_attachment (SSM, Image Builder, ECR) | 3 |
+| aws_iam_role_policy (logs access) | 1 |
+| aws_iam_instance_profile | 1 |
+| aws_iam_role (Lambda execution) | 1 |
+| aws_iam_role_policy (Lambda inline) | 1 |
+| aws_iam_openid_connect_provider (GitHub OIDC) | 1 |
+| aws_iam_role (GitHub Actions) | 1 |
+| aws_iam_role_policy (GitHub Actions inline) | 1 |
+
+### Event-Driven Automation (3 resources)
+
+| Resource | Count |
+|----------|------:|
+| aws_cloudwatch_event_rule (image state change) | 1 |
+| aws_cloudwatch_event_target (invoke Lambda) | 1 |
+| aws_lambda_permission (EventBridge invoke) | 1 |
+| aws_lambda_function (update SSM parameter) | 1 |
+
+---
+
+### Summary by Service
+
+| Service | Count |
+|---------|------:|
+| EC2 Image Builder | 8 |
+| S3 | 4 |
+| SSM | 1 |
+| IAM | 11 |
+| Lambda + EventBridge | 4 |
+| Total | ~28 |
+
+▎ Note: The exact count is 28 resources. The aws_lambda_function is counted separately from the EventBridge resources. The bootstrap-sandbox.sh script also creates 2 additional resources out-of-band (S3 state bucket + KMS key for AMI encryption) that are not managed by this Terraform module.
+
 *Generated from repository analysis — keep this document updated as the pipeline evolves.*
