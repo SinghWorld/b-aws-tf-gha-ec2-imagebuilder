@@ -47,7 +47,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "imagebuilder_logs" {
     filter {}
 
     expiration {
-      days = 180
+      days = 60   # changing from 180 to 60
     }
   }
 }
