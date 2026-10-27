@@ -364,6 +364,7 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "iam:UntagInstanceProfile",
       "iam:TagOpenIDConnectProvider",
       "iam:UntagOpenIDConnectProvider",
+      "iam:DeleteOpenIDConnectProvider", # Required for terraform destroy to delete OIDC provider
       "iam:ListInstanceProfilesForRole",
       "iam:GetPolicy",
       "iam:GetPolicyVersion",
@@ -404,6 +405,7 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "s3:GetBucketPublicAccessBlock",
       "s3:CreateBucket",
       "s3:DeleteBucket",
+      "s3:DeleteBucketPolicy", # Required for terraform destroy to delete bucket policy
       # Read APIs needed by `terraform refresh` to read the bucket's
       # current attributes (policy, ACL, tags, encryption, location).
       # Without these the plan step fails with AccessDenied on
@@ -490,6 +492,7 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "ssm:GetParameter",
       "ssm:GetParameters",
       "ssm:PutParameter",
+      "ssm:DeleteParameter", # Required for terraform destroy to clean up SSM parameter
       "ssm:GetParameterHistory",
       "ssm:ListTagsForResource",
       "ssm:AddTagsToResource",
